@@ -1,0 +1,80 @@
+# ─────────────────────────────────────────────
+# SentiRoute  Example Configuration
+# Copy to sentiroute.yaml and fill in your keys
+# ─────────────────────────────────────────────
+
+server:
+  host: '127.0.0.1'
+  port: 3000
+
+model_slots:
+
+  # ── Opus (top-tier) ────────────────────────
+  opus:
+    model: claude-opus-4-7
+    upstreams:
+      - name: Primary
+        endpoint: 'https://api.anthropic.com/v1'
+        api_key: 'sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+        upstream_model: claude-opus-4-7
+        format: anthropic
+        # timeoutMs: 120000  # optional, default 120s
+
+      - name: Backup
+        endpoint: 'https://api.openai.com/v1'
+        api_key: 'sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+        upstream_model: gpt-5
+        format: openai
+
+      # Add as many backups as you want
+      # - name: Emergency
+      #   endpoint: 'https://api.deepseek.com/v1'
+      #   api_key: 'sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+      #   upstream_model: deepseek-chat
+      #   format: openai
+
+  # ── Sonnet (balanced) ──────────────────────
+  sonnet:
+    model: claude-sonnet-4-6
+    upstreams:
+      - name: Primary
+        endpoint: 'https://api.anthropic.com/v1'
+        api_key: 'sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+        upstream_model: claude-sonnet-4-6
+        format: anthropic
+
+      - name: Backup
+        endpoint: 'https://api.openai.com/v1'
+        api_key: 'sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+        upstream_model: gpt-5
+        format: openai
+
+  # ── Haiku (fast/cheap) ─────────────────────
+  haiku:
+    model: claude-haiku-4-5
+    upstreams:
+      - name: Primary
+        endpoint: 'https://api.anthropic.com/v1'
+        api_key: 'sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+        upstream_model: claude-haiku-4-5
+        format: anthropic
+
+      - name: Backup
+        endpoint: 'https://api.openai.com/v1'
+        api_key: 'sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+        upstream_model: gpt-5-mini
+        format: openai
+
+# ── Sentiment detection (all optional, shown with defaults) ──
+sentiment:
+  threshold: 0.6        # 0.0~1.0 — score that triggers upstream switch
+  decayRate: 0.1         # per-hour exponential decay of accumulated score
+  cooldownMs: 300000     # minimum time before retrying primary (5 min)
+  antiFlapMs: 60000      # minimum time between any two switches (1 min)
+  weights:
+    degradation: 0.9     # "降智", "dumb", "lobotomized", "nerfed" ...
+    profanity: 0.8       # "fuck", "shit", "垃圾", "废物" ...
+    repetition: 0.6      # same message sent 3+ times
+    imperatives: 0.4     # "stop", "wrong", "不对", "错了" ...
+    caps: 0.3             # >50% uppercase (shouting)
+    brevity: 0.2          # very short messages after long ones (giving up)
