@@ -27,6 +27,29 @@ export async function createApp(configManager: ConfigManager, sentimentState: Se
 
   const routeOpts = { config: liveConfig, dataDir, sentimentState };
 
+  // ── Auth middleware: protect proxy endpoints with server.api_key ──
+  const exemptPrefixes = ['/health', '/dashboard/', '/api/dashboard/'];
+  app.addHook('onRequest', async (request, reply) => {
+    const requiredKey = liveConfig.server?.api_key;
+    if (!requiredKey) return; // no key configured — allow all
+
+    const path = request.url.split('?')[0];
+    if (exemptPrefixes.some((p) => path.startsWith(p))) return;
+
+    // Check Authorization: Bearer <key>
+    const auth = request.headers.authorization;
+    if (auth?.startsWith('Bearer ')) {
+      const token = auth.slice(7).trim();
+      if (token === requiredKey) return;
+    }
+
+    // Check x-api-key header
+    const xKey = request.headers['x-api-key'];
+    if (xKey === requiredKey) return;
+
+    return reply.code(401).send({ error: 'Unauthorized', message: 'Invalid or missing API key' });
+  });
+
   app.register(healthRoute, { config: liveConfig });
   app.register(messagesRoute, routeOpts);
   app.register(chatRoute, routeOpts);

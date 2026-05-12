@@ -59,14 +59,22 @@ const configRoutes: FastifyPluginAsync<ConfigOpts> = async (fastify, opts) => {
       });
     }
 
-    // Detect if this is a structural change (model_slots) or runtime-only
+    // Detect if this is a structural change (model_slots, server) or runtime-only
     const isStructural = body.model_slots !== undefined;
+    const isServerChange = body.server !== undefined;
 
-    if (isStructural) {
+    if (isStructural || isServerChange) {
       // Preserve real api_keys — the frontend sends masked keys for untouched upstreams
-      const incoming = result.data.model_slots as Record<string, { upstreams: { api_key: string }[] }>;
-      const existing = opts.configManager.config.model_slots as Record<string, { upstreams: { api_key: string }[] }>;
-      preserveMaskedKeys(incoming, existing);
+      if (isStructural) {
+        const incoming = result.data.model_slots as Record<string, { upstreams: { api_key: string }[] }>;
+        const existing = opts.configManager.config.model_slots as Record<string, { upstreams: { api_key: string }[] }>;
+        preserveMaskedKeys(incoming, existing);
+      }
+
+      // Preserve server.api_key if masked
+      if (isServerChange && result.data.server?.api_key && isMaskedKey(result.data.server.api_key)) {
+        result.data.server.api_key = opts.configManager.config.server?.api_key ?? '';
+      }
 
       // Full config update: replace in memory (breaks proxy route reference — restart needed)
       opts.configManager.config = result.data;

@@ -36,6 +36,7 @@ export const configSchema = z.object({
   server: z.object({
     port: z.coerce.number().int().positive().default(3000),
     host: z.string().default('127.0.0.1'),
+    api_key: z.string().min(1).optional(),
   }),
   sentiment: sentimentConfigSchema.optional(),
   model_slots: z.record(z.string(), modelSlotSchema).refine(

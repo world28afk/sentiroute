@@ -51,6 +51,11 @@
         restartBanner: 'Config saved. Restart SentiRoute for structural changes to take effect.',
         saveSuccess: 'Saved successfully.',
         saveFailed: 'Save failed',
+        proxyAuth: 'Proxy Authentication',
+        proxyAuthDesc: 'API key required by clients to call the proxy. Leave empty to disable.',
+        proxyApiKey: 'Proxy API Key',
+        noAuth: 'No authentication (open access)',
+        saveProxyKey: 'Save Proxy Key',
         sentimentState: 'Sentiment State',
         sentimentDesc: 'Auto-refreshes every 3 seconds.',
         lastUpdated: 'Last updated',
@@ -114,6 +119,11 @@
         restartBanner: '配置已保存。重启 SentiRoute 使结构性修改生效。',
         saveSuccess: '保存成功。',
         saveFailed: '保存失败',
+        proxyAuth: '代理鉴权',
+        proxyAuthDesc: '客户端调用代理所需的 API 密钥。留空则不鉴权。',
+        proxyApiKey: '代理 API 密钥',
+        noAuth: '无鉴权（开放访问）',
+        saveProxyKey: '保存代理密钥',
         sentimentState: '情绪状态',
         sentimentDesc: '每 3 秒自动刷新。',
         lastUpdated: '最后更新',
@@ -186,6 +196,8 @@
         saveError: '',
         restartRecommended: false,
         rawKeys: {}, // slotId -> idx -> raw api_key
+        proxyKeyEditing: false,
+        proxyKeyTemp: '',
 
         get t() { return this.$store.i18n.t.bind(this.$store.i18n); },
 
@@ -276,6 +288,30 @@
               if (result.issues && result.issues.length) {
                 this.saveError += ': ' + result.issues.map(function(i) { return i.path + ' ' + i.message; }).join('; ');
               }
+            }
+          } catch (e) {
+            this.saveError = e.message;
+          }
+        },
+
+        async saveProxyKey() {
+          this.saveMessage = '';
+          this.saveError = '';
+          try {
+            const payload = { server: { ...this.configData.server, api_key: this.proxyKeyTemp || undefined } };
+            const res = await fetch('/api/dashboard/config', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const result = await res.json();
+            if (res.ok) {
+              this.saveMessage = result.message || this.t('saveSuccess');
+              this.restartRecommended = result.restartRecommended;
+              this.proxyKeyEditing = false;
+              await this.fetchConfig();
+            } else {
+              this.saveError = result.error || this.t('saveFailed');
             }
           } catch (e) {
             this.saveError = e.message;
@@ -491,6 +527,36 @@
         </div>
 
         <button @click="saveRuntimeParams()" class="btn btn-primary" :disabled="loading" x-text="$store.i18n.t('saveRuntime')">Save Runtime Params</button>
+        <p x-show="saveMessage" x-text="saveMessage" class="text-success"></p>
+        <p x-show="saveError" x-text="saveError" class="text-error"></p>
+      </div>
+
+      <!-- Proxy Authentication -->
+      <div class="card">
+        <h2 x-text="$store.i18n.t('proxyAuth')">Proxy Authentication</h2>
+        <p class="text-muted" x-text="$store.i18n.t('proxyAuthDesc')">API key required by clients.</p>
+
+        <div class="param-group">
+          <label class="param-label">
+            <span x-text="$store.i18n.t('proxyApiKey')">Proxy API Key</span>
+          </label>
+
+          <template x-if="!proxyKeyEditing">
+            <div style="display:flex;align-items:center;gap:8px">
+              <code class="masked-key" x-text="configData.server?.api_key ? maskKey(configData.server.api_key) : $store.i18n.t('noAuth')"></code>
+              <button @click="proxyKeyEditing = true; proxyKeyTemp = ''; $nextTick(() => $refs.proxyKeyInput && $refs.proxyKeyInput.focus())" class="btn btn-sm" x-text="$store.i18n.t('edit')">Edit</button>
+            </div>
+          </template>
+
+          <template x-if="proxyKeyEditing">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <input type="text" x-model="proxyKeyTemp" x-ref="proxyKeyInput" class="input-sm" style="min-width:220px;max-width:360px" :placeholder="$store.i18n.t('noAuth')" @keydown.enter="saveProxyKey()" @keydown.escape="proxyKeyEditing = false">
+              <button @click="saveProxyKey()" class="btn btn-sm btn-primary" x-text="$store.i18n.t('confirm')">Confirm</button>
+              <button @click="proxyKeyEditing = false" class="btn btn-sm" x-text="$store.i18n.t('cancel')">Cancel</button>
+            </div>
+          </template>
+        </div>
+
         <p x-show="saveMessage" x-text="saveMessage" class="text-success"></p>
         <p x-show="saveError" x-text="saveError" class="text-error"></p>
       </div>
