@@ -2,7 +2,7 @@
 
 ## Overview
 
-SentiRoute is a local Node.js/TypeScript HTTP proxy that monitors user sentiment in AI coding tool conversations and automatically switches upstream providers when it detects model degradation or user frustration. This roadmap covers the v1.0 build across 5 phases: project foundation, core proxy pipeline, format translation, sentiment detection with state persistence, and finishing with auto-switch behavior and observability tooling.
+SentiRoute is a local Node.js/TypeScript HTTP proxy that monitors user sentiment in AI coding tool conversations and automatically switches upstream providers when it detects model degradation or user frustration. This roadmap covers the v1.0 build across 6 phases: project foundation, core proxy pipeline, format translation, sentiment detection with state persistence, auto-switch behavior and observability tooling, and a web dashboard for config management and runtime monitoring.
 
 ## Phases
 
@@ -85,7 +85,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -94,3 +94,16 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 3. Format Translation | TBD | Not started | - |
 | 4. Sentiment Detection + State Persistence | TBD | Not started | - |
 | 5. Auto-Switch + Polish | TBD | Not started | - |
+| 6. Web Dashboard | 0/3 | Not started | - |
+
+### Phase 6: Web Dashboard — Config management UI, runtime parameter tuning, sentiment state viewer, and upstream configuration editor
+
+**Goal:** User opens http://127.0.0.1:3000/dashboard/ and gets a browser-based config editor with masked API keys, runtime parameter sliders with live hot-update, per-slot sentiment score bars with auto-refresh, switch event history tables, and upstream add/edit/remove capabilities.
+**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06, DASH-07, DASH-08
+**Depends on:** Phase 5
+**Plans:** 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — ConfigManager class (mutable config wrapper), YAML write-back, API key masking utility
+- [ ] 06-02-PLAN.md — Dashboard API routes (config CRUD, sentiment state viewer, switch history, slot reset) as encapsulated Fastify plugin
+- [ ] 06-03-PLAN.md — Dashboard frontend (Alpine.js SPA with dark theme), @fastify/static serving, app.ts/index.ts wiring for ConfigManager

@@ -7,11 +7,11 @@ stopped_at: Completed Phase 2 (02-02-PLAN.md)
 last_updated: "2026-05-11T09:05:00.000Z"
 last_activity: 2026-05-11
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 2
   total_plans: 5
   completed_plans: 5
-  percent: 40
+  percent: 33
 ---
 
 # Project State
@@ -47,6 +47,10 @@ Progress: [████......] 40% (2/5 phases)
 | 02-core-proxy-pipeline | 2 | ~23min |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 6 added: Web Dashboard — Config management UI, runtime parameter tuning, sentiment state viewer, and upstream configuration editor (2026-05-12)
 
 ### Decisions
 
