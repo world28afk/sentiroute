@@ -2,29 +2,31 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
 
-export function resolveConfigPath(): string {
+export interface ResolvedPath {
+  path: string;
+  exists: boolean;
+}
+
+export function resolveConfigPath(): ResolvedPath {
   const envPath = process.env['SENTIROUTE_CONFIG'];
-  if (envPath && existsSync(envPath)) return envPath;
+  if (envPath) {
+    if (existsSync(envPath)) return { path: envPath, exists: true };
+    throw new Error(`SENTIROUTE_CONFIG is set but file not found: ${envPath}`);
+  }
 
   const cwdPath = join(process.cwd(), 'sentiroute.yaml');
-  if (existsSync(cwdPath)) return cwdPath;
+  if (existsSync(cwdPath)) return { path: cwdPath, exists: true };
 
   const cwdYmlPath = join(process.cwd(), 'sentiroute.yml');
-  if (existsSync(cwdYmlPath)) return cwdYmlPath;
+  if (existsSync(cwdYmlPath)) return { path: cwdYmlPath, exists: true };
 
   const userDir = platform() === 'win32'
     ? join(process.env['APPDATA'] || join(homedir(), 'AppData', 'Roaming'), 'SentiRoute')
     : join(homedir(), '.config', 'sentiroute');
 
   const userPath = join(userDir, 'config.yaml');
-  if (existsSync(userPath)) return userPath;
+  if (existsSync(userPath)) return { path: userPath, exists: true };
 
-  throw new Error(
-    `No config file found. Create a sentiroute.yaml file or set SENTIROUTE_CONFIG.\n` +
-    `Searched:\n` +
-    `  - ${envPath ? envPath : '(SENTIROUTE_CONFIG not set or file not found)'}\n` +
-    `  - ${cwdPath}\n` +
-    `  - ${cwdYmlPath}\n` +
-    `  - ${userPath}`
-  );
+  // No config found — return CWD path as default for auto-creation
+  return { path: cwdPath, exists: false };
 }

@@ -9,7 +9,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node.js >=18">
   <img src="https://img.shields.io/badge/typescript-6.0-blue" alt="TypeScript 6.0">
-  <img src="https://img.shields.io/badge/tests-147%20passed-success" alt="147 Tests Passed">
+  <img src="https://img.shields.io/badge/tests-535%20passed-success" alt="535 Tests Passed">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
 </p>
 
@@ -31,33 +31,29 @@ RemixCodes is a reliable and efficient API relay provider, offering unified API 
 # Install globally
 npm install -g sentiroute
 
-# Create a config file
-cat > sentiroute.yaml << 'EOF'
-server:
-  host: '127.0.0.1'
-  port: 3000
-
-model_slots:
-  opus:
-    model: claude-opus-4.7
-    upstreams:
-      - name: Primary
-        endpoint: 'https://api.anthropic.com/v1'
-        api_key: 'sk-ant-...'
-        upstream_model: claude-opus-4-7
-        format: anthropic
-      - name: Backup
-        endpoint: 'https://api.openai.com/v1'
-        api_key: 'sk-or-...'
-        upstream_model: gpt-5
-        format: openai
-EOF
-
-# Start the proxy
+# Start the proxy — auto-creates sentiroute.yaml with defaults on first run
 sentiroute
 
 # Configure your coding tool to use http://127.0.0.1:3000
 ```
+
+On first run, SentiRoute creates `sentiroute.yaml` in the current directory with pre-configured model slots for Claude Opus, Sonnet, and Haiku — all pointing to Anthropic's API. Replace `sk-ant-your-key-here` with your real API key, or open the dashboard to configure everything in the browser.
+
+You can also start from source:
+
+```bash
+git clone <repo-url> && cd sentiroute && npm install
+npm run build && npm start
+```
+
+### Dashboard
+
+Once the server is running, open **http://127.0.0.1:3000/dashboard/** for a browser-based config editor:
+
+- **Config tab** — edit upstream endpoints, API keys, model mappings
+- **Sentiment tab** — per-slot score bars with live auto-refresh
+- **History tab** — switch event timeline with timestamps and reasons
+- **Runtime params** — sliders for threshold, decay rate, cooldown (hot-update, no restart)
 
 ## How It Works
 

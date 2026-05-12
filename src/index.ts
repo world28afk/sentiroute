@@ -1,10 +1,71 @@
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { loadConfig } from './config/loader.js';
 import { ConfigManager } from './config/manager.js';
 import { createApp } from './server/app.js';
 import { resolveConfigPath } from './config/paths.js';
 import { VERSION } from './utils/version.js';
 import { SentimentState } from './sentiment/state.js';
-import type { SentimentConfig } from './config/schema.js';
+import { writeConfig } from './config/writer.js';
+import { configSchema } from './config/schema.js';
+import type { Config, SentimentConfig } from './config/schema.js';
+
+function createDefaultConfig(): Config {
+  const result = configSchema.safeParse({
+    server: { port: 3000, host: '127.0.0.1' },
+    sentiment: {
+      threshold: 0.6,
+      decayRate: 0.1,
+      cooldownMs: 300000,
+      antiFlapMs: 60000,
+      weights: {
+        profanity: 0.8, degradation: 0.9, imperatives: 0.4,
+        caps: 0.3, brevity: 0.2, repetition: 0.6,
+      },
+    },
+    model_slots: {
+      'claude-opus-4.7': {
+        model: 'claude-opus-4-7-20250805',
+        upstreams: [{
+          name: 'Anthropic',
+          endpoint: 'https://api.anthropic.com',
+          api_key: 'sk-ant-your-key-here',
+          upstream_model: 'claude-opus-4-7-20250805',
+          format: 'anthropic',
+          timeoutMs: 120000,
+        }],
+      },
+      'claude-sonnet-4-6': {
+        model: 'claude-sonnet-4-6-20250701',
+        upstreams: [{
+          name: 'Anthropic',
+          endpoint: 'https://api.anthropic.com',
+          api_key: 'sk-ant-your-key-here',
+          upstream_model: 'claude-sonnet-4-6-20250701',
+          format: 'anthropic',
+          timeoutMs: 120000,
+        }],
+      },
+      'claude-haiku-4.5': {
+        model: 'claude-haiku-4-5-20251001',
+        upstreams: [{
+          name: 'Anthropic',
+          endpoint: 'https://api.anthropic.com',
+          api_key: 'sk-ant-your-key-here',
+          upstream_model: 'claude-haiku-4-5-20251001',
+          format: 'anthropic',
+          timeoutMs: 120000,
+        }],
+      },
+    },
+  });
+
+  if (!result.success) {
+    throw new Error(`Default config validation failed — this is a bug. ${result.error.message}`);
+  }
+
+  return result.data;
+}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -16,8 +77,18 @@ async function main(): Promise<void> {
   }
 
   let configPath: string;
+  let created = false;
   try {
-    configPath = resolveConfigPath();
+    const resolved = resolveConfigPath();
+    configPath = resolved.path;
+
+    if (!resolved.exists) {
+      const dir = dirname(configPath);
+      mkdirSync(dir, { recursive: true });
+      const defaults = createDefaultConfig();
+      await writeConfig(configPath, defaults);
+      created = true;
+    }
   } catch (err) {
     console.error((err as Error).message);
     process.exit(1);
@@ -44,11 +115,11 @@ async function main(): Promise<void> {
       .join(', ');
 
     console.log(`SentiRoute v${VERSION}  ${address}`);
-    console.log(`Config: ${configPath}`);
+    console.log(`Config: ${configPath}${created ? ' (created with defaults)' : ''}`);
     console.log(`Slots: ${slots}`);
-    console.log(`POST ${address}/v1/messages`);
-    console.log(`POST ${address}/v1/chat/completions`);
-    console.log(`GET  ${address}/health`);
+    console.log(`POST   ${address}v1/messages`);
+    console.log(`POST   ${address}v1/chat/completions`);
+    console.log(`GET    ${address}health`);
     console.log(`Dashboard: ${address}dashboard/`);
   });
 
@@ -68,7 +139,12 @@ async function main(): Promise<void> {
 function showStatus(): void {
   let configPath: string;
   try {
-    configPath = resolveConfigPath();
+    const resolved = resolveConfigPath();
+    if (!resolved.exists) {
+      console.error('No config file found. Run the server first to create defaults, or set SENTIROUTE_CONFIG.');
+      process.exit(1);
+    }
+    configPath = resolved.path;
   } catch (err) {
     console.error((err as Error).message);
     process.exit(1);

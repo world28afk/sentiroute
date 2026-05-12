@@ -6,3 +6,5 @@ dist/
 logs/
 .vite/
 .claude/
+sentiroute.yaml
+sentiroute.yml

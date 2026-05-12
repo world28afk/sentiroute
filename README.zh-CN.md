@@ -9,7 +9,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node.js >=18">
   <img src="https://img.shields.io/badge/typescript-6.0-blue" alt="TypeScript 6.0">
-  <img src="https://img.shields.io/badge/tests-147%20passed-success" alt="147 Tests Passed">
+  <img src="https://img.shields.io/badge/tests-535%20passed-success" alt="535 Tests Passed">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
 </p>
 
@@ -31,33 +31,29 @@ RemixCodes 是一家可靠高效的 API 中转服务商，提供 Claude 和 GPT 
 # 全局安装
 npm install -g sentiroute
 
-# 创建配置文件
-cat > sentiroute.yaml << 'EOF'
-server:
-  host: '127.0.0.1'
-  port: 3000
-
-model_slots:
-  opus:
-    model: claude-opus-4.7
-    upstreams:
-      - name: Primary
-        endpoint: 'https://api.anthropic.com/v1'
-        api_key: 'sk-ant-...'
-        upstream_model: claude-opus-4-7
-        format: anthropic
-      - name: Backup
-        endpoint: 'https://api.openai.com/v1'
-        api_key: 'sk-or-...'
-        upstream_model: gpt-5
-        format: openai
-EOF
-
-# 启动代理
+# 启动代理 —— 首次运行自动在运行目录创建 sentiroute.yaml 并填入默认配置
 sentiroute
 
 # 把编程工具配置为 http://127.0.0.1:3000
 ```
+
+首次运行时，SentiRoute 会在当前目录创建 `sentiroute.yaml`，预配置好 Claude Opus、Sonnet、Haiku 三个模型槽位，全部指向 Anthropic API。把 `sk-ant-your-key-here` 替换成你的真实 API key，或者在浏览器中打开 Dashboard 配置一切。
+
+也可以从源码启动：
+
+```bash
+git clone <repo-url> && cd sentiroute && npm install
+npm run build && npm start
+```
+
+### Dashboard
+
+服务启动后，打开 **http://127.0.0.1:3000/dashboard/** 进入浏览器配置面板：
+
+- **Config 标签** — 编辑上游端点、API key、模型映射
+- **Sentiment 标签** — 各槽位分数条，实时自动刷新
+- **History 标签** — 切换事件时间线，含时间戳和原因
+- **运行时参数** — 阈值、衰减率、冷却时间滑块（热更新，无需重启）
 
 ## 工作原理
 
