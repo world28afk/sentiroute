@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -25,6 +24,7 @@ const MINIMAL_CONFIG: Config = {
           api_key: 'sk-ant-test-key-here',
           upstream_model: 'claude-opus-4-7',
           format: 'anthropic',
+          timeoutMs: 120000,
         },
       ],
     },
@@ -115,12 +115,14 @@ describe('writeConfig', () => {
               api_key: 'sk-ant-primary',
               upstream_model: 'claude-opus-4-7',
               format: 'anthropic',
+              timeoutMs: 120000,
             },
             {
               endpoint: 'https://api.openai.com/v1',
               api_key: 'sk-or-backup',
               upstream_model: 'gpt-5',
               format: 'openai',
+              timeoutMs: 120000,
             },
           ],
         },

@@ -18,6 +18,7 @@ function makeMinimalConfig(overrides?: Partial<Config>): Config {
             api_key: 'sk-ant-test-key-here',
             upstream_model: 'claude-opus-4-7',
             format: 'anthropic',
+            timeoutMs: 120000,
           },
         ],
       },
