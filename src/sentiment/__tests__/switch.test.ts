@@ -3,6 +3,14 @@ import { evaluateSwitch } from '../switch.js';
 import type { SlotSentimentState } from '../state.js';
 import type { SentimentConfig } from '../../config/schema.js';
 
+const DEFAULT_AI_METRICS = {
+  avgResponseLength: 0,
+  responseCount: 0,
+  recentRefusal: 0,
+  recentHedging: 0,
+  recentApology: 0,
+};
+
 function makeState(overrides: Partial<SlotSentimentState> = {}): SlotSentimentState {
   return {
     slotId: 'test-slot',
@@ -12,6 +20,7 @@ function makeState(overrides: Partial<SlotSentimentState> = {}): SlotSentimentSt
     switchHistory: [],
     cooldownUntil: null,
     triggerCount: 0,
+    aiMetrics: DEFAULT_AI_METRICS,
     ...overrides,
   };
 }

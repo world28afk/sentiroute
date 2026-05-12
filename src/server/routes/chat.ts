@@ -6,8 +6,30 @@ import { executeUpstream } from '../../proxy/executor.js';
 import { getRequestLogger } from '../middleware/logging.js';
 import { getTranslator } from '../../translation/registry.js';
 import { SentimentState } from '../../sentiment/state.js';
-import { analyzeSentiment, extractUserMessages, DEFAULT_WEIGHTS } from '../../sentiment/signals.js';
+import { analyzeSentiment, extractUserMessages, analyzeAIResponse, DEFAULT_WEIGHTS } from '../../sentiment/signals.js';
 import { applySentimentSwitch } from '../../sentiment/switch.js';
+
+// Extract text content from a response body (Anthropic or OpenAI format)
+function extractResponseText(body: unknown): string {
+  if (!body || typeof body !== 'object') return '';
+  const obj = body as Record<string, unknown>;
+
+  // Anthropic format: { content: [{ type: 'text', text: '...' }] }
+  if (Array.isArray(obj.content)) {
+    return (obj.content as Array<{ type?: string; text?: string }>)
+      .filter((b) => b.type === 'text' && b.text)
+      .map((b) => b.text!)
+      .join('\n');
+  }
+
+  // OpenAI format: { choices: [{ message: { content: '...' } }] }
+  if (Array.isArray(obj.choices)) {
+    const choice = (obj.choices as Array<{ message?: { content?: string } }>)[0];
+    return choice?.message?.content ?? '';
+  }
+
+  return '';
+}
 
 function buildUpstreamUrl(endpoint: string, incomingUrl: string): string {
   const base = endpoint.replace(/\/+$/, '');
@@ -124,6 +146,14 @@ const chatPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
       const responseBody = translator
         ? translator.translateResponse(result.body, slot.upstreamModel)
         : result.body;
+
+      // Post-hoc AI response analysis (no latency impact on response)
+      const responseText = extractResponseText(responseBody);
+      const aiSignals = analyzeAIResponse(responseText, slotState.aiMetrics.avgResponseLength);
+      if (responseText.length > 0) {
+        opts.sentimentState.updateAISignals(slot.slotId, aiSignals, responseText.length, sentimentCfg).catch(() => {});
+      }
+
       reply
         .header('X-SentiRoute-Upstream', slot.slotId)
         .header('X-SentiRoute-Score', scoreStr)
@@ -144,10 +174,28 @@ const chatPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
       ? translator.translateStream(result.stream as any, slot.upstreamModel)
       : (result.stream as any);
     const nodeStream = Readable.fromWeb(rawStream);
+
+    // Accumulate streamed content for post-hoc AI response analysis
+    let streamedText = '';
+    const origWrite = reply.raw.write.bind(reply.raw);
+    (reply.raw as any).write = function(chunk: any, ...args: any[]) {
+      if (typeof chunk === 'string') {
+        streamedText += chunk;
+      } else if (Buffer.isBuffer(chunk)) {
+        streamedText += chunk.toString();
+      }
+      return origWrite(chunk, ...args);
+    };
+
     nodeStream.pipe(reply.raw);
 
     request.raw.on('close', () => {
       nodeStream.destroy();
+      // Post-hoc analysis after stream ends
+      if (streamedText.length > 0) {
+        const aiSignals = analyzeAIResponse(streamedText, slotState.aiMetrics.avgResponseLength);
+        opts.sentimentState.updateAISignals(slot.slotId, aiSignals, streamedText.length, sentimentCfg).catch(() => {});
+      }
     });
 
     nodeStream.on('error', (err) => {
