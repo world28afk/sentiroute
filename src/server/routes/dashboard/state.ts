@@ -1,19 +1,27 @@
 import type { FastifyPluginAsync } from 'fastify';
 import type { ConfigManager } from '../../../config/manager.js';
 import type { SentimentState } from '../../../sentiment/state.js';
+import type { SentimentConfig } from '../../../config/schema.js';
 
 type ConfigOpts = { configManager: ConfigManager; sentimentState: SentimentState };
+
+const DEFAULT_SENTIMENT: SentimentConfig = {
+  threshold: 0.6,
+  decayRate: 0.1,
+  cooldownMs: 300000,
+  antiFlapMs: 60000,
+};
 
 const stateRoutes: FastifyPluginAsync<ConfigOpts> = async (fastify, opts) => {
   fastify.get('/api/dashboard/state', async (_req, reply) => {
     reply.header('Cache-Control', 'no-store');
 
     // Read sentiment config with defaults
-    const sentimentCfg = opts.configManager.config.sentiment ?? {};
-    const threshold = sentimentCfg.threshold ?? 0.6;
-    const decayRate = sentimentCfg.decayRate ?? 0.1;
-    const cooldownMs = sentimentCfg.cooldownMs ?? 300000;
-    const antiFlapMs = sentimentCfg.antiFlapMs ?? 60000;
+    const sentimentCfg = opts.configManager.config.sentiment ?? DEFAULT_SENTIMENT;
+    const threshold = sentimentCfg.threshold;
+    const decayRate = sentimentCfg.decayRate;
+    const cooldownMs = sentimentCfg.cooldownMs;
+    const antiFlapMs = sentimentCfg.antiFlapMs;
 
     // Get all slot states
     const slots = opts.sentimentState.getAllSlots();
