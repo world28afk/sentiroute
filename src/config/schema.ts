@@ -25,6 +25,9 @@ export const sentimentSignalWeightsSchema = z.object({
   aiHedging: z.coerce.number().min(0).max(1).default(0.3),
   aiApology: z.coerce.number().min(0).max(1).default(0.4),
   aiLengthDrop: z.coerce.number().min(0).max(1).default(0.5),
+  aiLaziness: z.coerce.number().min(0).max(1).default(0.8),
+  aiDisclaimer: z.coerce.number().min(0).max(1).default(0.3),
+  aiSelfRepetition: z.coerce.number().min(0).max(1).default(0.5),
 });
 
 export const sentimentConfigSchema = z.object({

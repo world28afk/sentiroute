@@ -357,6 +357,20 @@ SentiRoute 的情绪检测引擎站在几十年开源 NLP 研究的肩膀上。�
 
 - **[funNLP](https://github.com/fighting41love/funNLP)** (80k★) —— 这个庞大的中文 NLP 资源集合中的情感词典和中文网络俚语语料启发了我们的中文降智关键词（拉胯、摆烂、离谱、逆天、卧槽、tmd 等）和中文增强/否定词列表（非常、极其、不、没等）。
 
+### 模型降智检测
+
+SentiRoute 的 AI 响应分析（拒绝、犹豫、自我重复、偷懒、免责声明检测）借鉴了 LLM 幻觉与质量漂移检测的学术研究：
+
+- **[SelfCheckGPT](https://github.com/potsawee/selfcheckgpt)** (Manakul et al., EMNLP-23, 611★) —— 黑箱零资源幻觉检测的开山之作，通过采样 N 个响应并测量它们之间的不一致性来判断幻觉。SentiRoute 无法承担 N 倍延迟开销，但其底层洞见——**降智模型产出会不一致**——被改造为单响应内的 N-gram 自我重复检测（降智模型在同一回复内反复使用相同短语）。
+
+- **[UQLM (Uncertainty Quantification for Language Models)](https://github.com/cvs-health/uqlm)** by CVS Health (1.1k★) —— 一个 LLM 不确定性量化工具包，将信号分为黑箱（一致性）、白箱（token 概率）、LLM-as-judge 三类。UQLM 的信号分类法直接启发了我们的 `aiRefusal`、`aiHedging`、`aiApology`、`aiSelfRepetition` 信号设计，我们只选择了在单一响应上零延迟即可工作的信号。
+
+- **[DeepEval](https://github.com/confident-ai/deepeval)** (15k★) —— 一个全面的 LLM 评估框架，包含 `HallucinationMetric`、`FaithfulnessMetric`、拒绝检测、偏见评分等基于 LLM-as-judge 的指标。虽然 DeepEval 需要调用裁判 LLM（对代理来说太慢），但其失败模式分类法（幻觉、偷懒补全、偏题、拒绝）直接塑造了我们的信号类别。
+
+- **GPT-4「变懒」社区观察** (2023 年 12 月) —— 广泛记录的社区驱动发现：GPT-4 开始产出含大量占位符的回复（"// ... rest of code unchanged"、"I'll provide a high-level outline"、"you can implement this part"）。我们的 `LAZINESS_KEYWORDS` 词典编录了这些已知降智特征。这不是单一仓库，而是源自众多 bug 报告、OpenAI 论坛讨论和 [LMSYS Chatbot Arena](https://chat.lmsys.org/) 排行榜讨论构建的社区知识。
+
+- **OpenAI Evals** ([github.com/openai/evals](https://github.com/openai/evals), 18k★) —— OpenAI 官方评估框架。提供了我们用于代理侧基于模式检测的概念脚手架（接受 vs 拒绝、长度异常、重复）。
+
 ### 开发工作流
 
 - **[GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done/)** —— 面向 AI 辅助编程的结构化软件开发工作流。SentiRoute 的整个开发生命周期——需求收集、阶段规划、架构设计、执行和验证——均通过 GSD 的阶段式工作流系统进行管理，集成了研究、规划和质量验证关卡。

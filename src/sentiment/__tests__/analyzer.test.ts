@@ -262,6 +262,7 @@ describe('analyzeSentiment', () => {
       ...DEFAULT_WEIGHTS,
       profanity: 0, degradation: 0, imperatives: 0, caps: 0, brevity: 0, repetition: 0,
       aiRefusal: 0, aiHedging: 0, aiApology: 0, aiLengthDrop: 0,
+      aiLaziness: 0, aiDisclaimer: 0, aiSelfRepetition: 0,
     };
     const result = analyzeSentiment(['fucking garbage'], zeroWeights);
     expect(result.score).toBe(0);
@@ -284,6 +285,9 @@ describe('analyzeSentiment', () => {
       hedging: 0.0,
       apology: 0.0,
       lengthScore: 0.0,
+      laziness: 0.0,
+      disclaimer: 0.0,
+      selfRepetition: 0.0,
     };
     const result = analyzeSentiment(['help me with this'], DEFAULT_WEIGHTS, aiSignals);
     expect(result.signals.aiRefusal).toBe(0.8);
@@ -294,6 +298,7 @@ describe('analyzeSentiment', () => {
     const base = analyzeSentiment(['this is wrong, fix it']);
     const withAI = analyzeSentiment(['this is wrong, fix it'], DEFAULT_WEIGHTS, {
       refusal: 0.6, hedging: 0, apology: 0, lengthScore: 0,
+      laziness: 0, disclaimer: 0, selfRepetition: 0,
     });
     expect(withAI.score).toBeGreaterThan(base.score);
   });
@@ -370,5 +375,71 @@ describe('VADER-inspired amplifiers', () => {
   it('detects Chinese mild profanity (tmd, 卧槽)', () => {
     const result = analyzeSentiment(['tmd 这代码又错了，卧槽']);
     expect(result.signals.profanity).toBeGreaterThan(0);
+  });
+});
+
+describe('analyzeAIResponse — degradation signals', () => {
+  it('detects lazy placeholder in code', () => {
+    const result = analyzeAIResponse('Here is your code:\n```\nfunction foo() {\n  // ... rest of code unchanged\n}\n```');
+    expect(result.laziness).toBeGreaterThan(0);
+  });
+
+  it('detects multiple lazy patterns', () => {
+    const result = analyzeAIResponse(
+      'Sure, here\'s a high-level outline. The rest of the code goes here. // TODO: implement this. You can implement the remaining logic.',
+    );
+    expect(result.laziness).toBeGreaterThan(0.2);
+  });
+
+  it('detects Chinese laziness patterns', () => {
+    const result = analyzeAIResponse('这是代码框架，其余代码请自行实现。具体实现略，不再赘述。');
+    expect(result.laziness).toBeGreaterThan(0);
+  });
+
+  it('detects excessive disclaimers', () => {
+    const result = analyzeAIResponse(
+      "It's important to note that this might not work. Please be aware of the limitations. I should mention that you should test this. Keep in mind that errors can occur. It's worth noting that this is just an example.",
+    );
+    expect(result.disclaimer).toBeGreaterThan(0);
+  });
+
+  it('detects Chinese disclaimers', () => {
+    const result = analyzeAIResponse(
+      '需要注意的是这个方案可能不完美。请注意各种边界条件。值得注意的是性能问题。需要指出的是测试覆盖不足。请务必进行充分测试。',
+    );
+    expect(result.disclaimer).toBeGreaterThan(0);
+  });
+
+  it('detects self-repetition (degraded model looping)', () => {
+    const repeated = 'The function takes a parameter and returns a value. '.repeat(15);
+    const result = analyzeAIResponse(repeated);
+    expect(result.selfRepetition).toBeGreaterThan(0);
+  });
+
+  it('no self-repetition for normal varied text', () => {
+    const text = 'The quick brown fox jumps over the lazy dog. ' +
+      'In a hole in the ground there lived a hobbit. ' +
+      'It was the best of times, it was the worst of times. ' +
+      'Call me Ishmael. Some years ago, never mind how long precisely. ' +
+      'All happy families are alike; each unhappy family is unhappy in its own way.';
+    const result = analyzeAIResponse(text);
+    expect(result.selfRepetition).toBe(0);
+  });
+
+  it('self-repetition ignores legitimate code repetition', () => {
+    const text = 'Here is some code:\n```\n' +
+      'console.log("test"); console.log("test"); console.log("test");\n'.repeat(10) +
+      '```\nThis is a brief explanation.';
+    const result = analyzeAIResponse(text);
+    expect(result.selfRepetition).toBe(0);
+  });
+
+  it('clean response has zero degradation signals', () => {
+    const result = analyzeAIResponse(
+      'Sure! To reverse a string in Python, you can use slicing: `text[::-1]`. This works because the slice notation `[start:stop:step]` with a step of -1 iterates backwards.',
+    );
+    expect(result.laziness).toBe(0);
+    expect(result.disclaimer).toBe(0);
+    expect(result.selfRepetition).toBe(0);
   });
 });

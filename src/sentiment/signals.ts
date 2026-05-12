@@ -1,7 +1,8 @@
 /**
- * Sentiment signal detection — adapted from open-source sentiment analysis research.
+ * Sentiment signal detection — adapted from open-source sentiment analysis
+ * and model-degradation research.
  *
- * Techniques integrated:
+ * Sentiment / lexicon techniques:
  * - VADER (Hutto & Gilbert, ICWSM-14) — booster/dampener words, negation handling,
  *   ALL-CAPS amplifier, punctuation emphasis, empirical scalars (B_INCR, C_INCR, N_SCALAR).
  *   Reference: https://github.com/cjhutto/vaderSentiment
@@ -12,6 +13,17 @@
  *               https://github.com/coffee-and-fun/google-profanity-words
  * - funNLP — Chinese sentiment dictionaries and internet slang corpora.
  *   Reference: https://github.com/fighting41love/funNLP
+ *
+ * Model-degradation detection techniques:
+ * - SelfCheckGPT (Manakul et al., EMNLP-23) — self-consistency framework. Adapted to
+ *   single-response n-gram repetition (no multi-sampling, zero added latency).
+ *   Reference: https://github.com/potsawee/selfcheckgpt
+ * - UQLM (CVS Health) — uncertainty quantification signal taxonomy (refusal, hedging,
+ *   consistency-based degradation). Inspired our aiRefusal/aiHedging/aiSelfRepetition signals.
+ *   Reference: https://github.com/cvs-health/uqlm
+ * - GPT-4 "got lazy" phenomenon (Dec 2023 community observation) — laziness keyword
+ *   dictionary covers known degradation patterns: "rest of code unchanged", "// TODO",
+ *   "implementation goes here", etc.
  */
 import type { SentimentSignalWeights } from '../config/schema.js';
 
@@ -26,6 +38,9 @@ export const DEFAULT_WEIGHTS: SentimentSignalWeights = {
   aiHedging: 0.3,
   aiApology: 0.4,
   aiLengthDrop: 0.5,
+  aiLaziness: 0.8,
+  aiDisclaimer: 0.3,
+  aiSelfRepetition: 0.5,
 };
 
 // ── Keyword dictionaries ──
@@ -171,6 +186,67 @@ const APOLOGY_KEYWORDS = [
   // Chinese
   '抱歉', '对不起', '不好意思', '我的错', '我错了',
   '请原谅', '请见谅', '感谢您的耐心', '请稍等',
+];
+
+// Lazy placeholder signals — model leaving stubs instead of code
+// Known degradation signature from the "GPT-4 got lazy" phenomenon (Dec 2023)
+const LAZINESS_KEYWORDS = [
+  // Generic placeholders
+  'rest of the code', 'rest of code', 'rest of your code',
+  '// ... rest of', '# ... rest of', '/* ... rest',
+  '// your code here', '# your code here', '// implementation here',
+  '// implementation goes here', '# implementation goes here',
+  '// continue with', '# continue with', '// add your', '# add your',
+  '// remaining code', '# remaining code', '// rest unchanged',
+  '// previous code unchanged', '# previous code unchanged',
+  '// existing code', '# existing code', '// other methods',
+  '// fill in', '# fill in', '// implement this', '# implement this',
+  '... (rest of', '... (remaining', '... (continue',
+  '[insert ', '[your ', '[add ', '[implement ', '[fill in',
+  '<your_', '<insert_', '<add_', 'your_function_here',
+  '// todo:', '# todo:', '// fixme:', '# fixme:',
+  // Lazy explanations instead of code
+  'i\'ll provide a high-level', 'here\'s a high-level',
+  'here\'s a general outline', 'here is a general outline',
+  'i\'ll provide an outline', 'here\'s a skeleton',
+  'i won\'t write out the full', 'i will not write out',
+  'you can implement', 'you would implement',
+  'left as an exercise', 'beyond the scope of',
+  // Chinese
+  '其余代码', '剩余代码', '剩下的代码', '其他代码',
+  '此处省略', '省略部分', '省略了', '此处略',
+  '保持不变', '其余部分不变', '其他部分省略',
+  '你的代码', '你的实现', '请自行实现', '自行补充',
+  '请补充', '请实现', '请填写', '请添加',
+  '具体实现略', '细节略', '不再赘述',
+];
+
+// Excessive disclaimer/safety boilerplate — degraded models pad with hedges
+const DISCLAIMER_KEYWORDS = [
+  // English — meta-disclaimers
+  "it's important to note", 'it is important to note',
+  "it's important to remember", 'it is important to remember',
+  "it's worth noting", 'it is worth noting',
+  "it's worth mentioning", 'it is worth mentioning',
+  'please be aware', 'please note that', 'please keep in mind',
+  'please remember that', 'keep in mind that',
+  'i should mention', 'i should note', 'i should point out',
+  'i must emphasize', 'i would like to emphasize',
+  'it should be noted', 'it must be noted',
+  'as a reminder', 'as a side note', 'as a disclaimer',
+  // English — over-cautious framing
+  'while i can', 'while i am able', 'although i can',
+  'before i begin', 'before we proceed', 'before we start',
+  'i want to make sure', 'i want to be clear',
+  'to be clear', 'to be safe', 'just to be safe',
+  'with that said', 'having said that', 'that being said',
+  'in the interest of', 'for the sake of clarity',
+  // Chinese — meta-disclaimers
+  '需要注意的是', '值得注意的是', '请注意', '请记住',
+  '需要指出的是', '需要说明的是', '需要强调的是',
+  '需要提醒的是', '需要提及的是', '需要明确的是',
+  '务必注意', '务必记住', '不可忽视的是',
+  '需要补充说明', '请务必', '请确保', '请谨记',
 ];
 
 // ── VADER-inspired amplifiers ──
@@ -447,11 +523,69 @@ function escalationScore(messages: string[]): number {
 
 // ── AI Response analysis ──
 
+/**
+ * Detect self-repetition within a single AI response.
+ *
+ * Inspired by SelfCheckGPT's self-consistency framework (Manakul et al., EMNLP-23):
+ * degraded models tend to loop on the same n-grams. Unlike SelfCheckGPT which
+ * samples N responses (high latency), this works on a SINGLE response by finding
+ * repeated 6-grams within the response itself.
+ *
+ * Reference: https://github.com/potsawee/selfcheckgpt
+ */
+function selfRepetitionScore(text: string): number {
+  if (text.length < 200) return 0; // need enough content to judge
+
+  // Strip code blocks and inline code (legitimate repetition there)
+  const stripped = text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]+`/g, ' ');
+
+  // Tokenize into words
+  const words = stripped
+    .toLowerCase()
+    .split(/[\s,.;:!?()\[\]{}'"`\n]+/)
+    .filter((w) => w.length > 1);
+
+  if (words.length < 50) return 0;
+
+  // Build 6-gram histogram
+  const ngramSize = 6;
+  const ngrams = new Map<string, number>();
+  for (let i = 0; i <= words.length - ngramSize; i++) {
+    const gram = words.slice(i, i + ngramSize).join(' ');
+    ngrams.set(gram, (ngrams.get(gram) ?? 0) + 1);
+  }
+
+  // Count n-grams that repeat 2+ times
+  let repeatedGrams = 0;
+  let maxCount = 0;
+  for (const count of ngrams.values()) {
+    if (count >= 2) {
+      repeatedGrams++;
+      maxCount = Math.max(maxCount, count);
+    }
+  }
+
+  // Score: weight by both unique repeated grams and max repetition count
+  // Normalize against total possible n-grams
+  const totalGrams = words.length - ngramSize + 1;
+  const repeatRatio = repeatedGrams / totalGrams;
+
+  // Significant if >2% of n-grams repeat OR any 6-gram appears 3+ times
+  if (repeatRatio < 0.02 && maxCount < 3) return 0;
+
+  return Math.min(1.0, repeatRatio * 10 + (maxCount - 2) * 0.2);
+}
+
 export interface AIResponseSignals {
   refusal: number;
   hedging: number;
   apology: number;
   lengthScore: number;
+  laziness: number;
+  disclaimer: number;
+  selfRepetition: number;
 }
 
 /**
@@ -483,12 +617,18 @@ export function analyzeAIResponse(
   avgResponseLength: number = 0,
 ): AIResponseSignals {
   if (!responseText) {
-    return { refusal: 0, hedging: 0, apology: 0, lengthScore: 0 };
+    return {
+      refusal: 0, hedging: 0, apology: 0, lengthScore: 0,
+      laziness: 0, disclaimer: 0, selfRepetition: 0,
+    };
   }
 
   const refusal = keywordScore(responseText, REFUSAL_KEYWORDS);
   const hedging = keywordScore(responseText, HEDGING_KEYWORDS);
   const apology = keywordScore(responseText, APOLOGY_KEYWORDS);
+  const laziness = keywordScore(responseText, LAZINESS_KEYWORDS);
+  const disclaimer = keywordScore(responseText, DISCLAIMER_KEYWORDS);
+  const selfRepetition = selfRepetitionScore(responseText);
 
   // Length anomaly: compare to rolling average
   let lengthScore = 0;
@@ -500,7 +640,7 @@ export function analyzeAIResponse(
     }
   }
 
-  return { refusal, hedging, apology, lengthScore };
+  return { refusal, hedging, apology, lengthScore, laziness, disclaimer, selfRepetition };
 }
 
 // ── Main analysis ──
@@ -521,6 +661,9 @@ export interface AnalysisResult {
     aiHedging: number;
     aiApology: number;
     aiLengthDrop: number;
+    aiLaziness: number;
+    aiDisclaimer: number;
+    aiSelfRepetition: number;
   };
 }
 
@@ -537,6 +680,7 @@ export function analyzeSentiment(
         brevity: 0, repetition: 0, escalation: 0,
         multiProfanity: 0, multiDegradation: 0,
         aiRefusal: 0, aiHedging: 0, aiApology: 0, aiLengthDrop: 0,
+        aiLaziness: 0, aiDisclaimer: 0, aiSelfRepetition: 0,
       },
     };
   }
@@ -561,13 +705,17 @@ export function analyzeSentiment(
     aiHedging: aiSignals?.hedging ?? 0,
     aiApology: aiSignals?.apology ?? 0,
     aiLengthDrop: aiSignals?.lengthScore ?? 0,
+    aiLaziness: aiSignals?.laziness ?? 0,
+    aiDisclaimer: aiSignals?.disclaimer ?? 0,
+    aiSelfRepetition: aiSignals?.selfRepetition ?? 0,
   };
 
   // Weighted average normalized to 0-1
   const totalWeight =
     weights.profanity + weights.degradation + weights.imperatives +
     weights.caps + weights.brevity + weights.repetition +
-    weights.aiRefusal + weights.aiHedging + weights.aiApology + weights.aiLengthDrop;
+    weights.aiRefusal + weights.aiHedging + weights.aiApology + weights.aiLengthDrop +
+    weights.aiLaziness + weights.aiDisclaimer + weights.aiSelfRepetition;
 
   if (totalWeight === 0) return { score: 0, signals };
 
@@ -586,7 +734,10 @@ export function analyzeSentiment(
      signals.aiRefusal * weights.aiRefusal +
      signals.aiHedging * weights.aiHedging +
      signals.aiApology * weights.aiApology +
-     signals.aiLengthDrop * weights.aiLengthDrop) / (totalWeight + 0.5);
+     signals.aiLengthDrop * weights.aiLengthDrop +
+     signals.aiLaziness * weights.aiLaziness +
+     signals.aiDisclaimer * weights.aiDisclaimer +
+     signals.aiSelfRepetition * weights.aiSelfRepetition) / (totalWeight + 0.5);
 
   return { score: Math.min(1.0, score), signals };
 }

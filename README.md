@@ -357,6 +357,20 @@ SentiRoute's sentiment engine stands on decades of open-source NLP research. Spe
 
 - **[funNLP](https://github.com/fighting41love/funNLP)** (80k★) — The massive Chinese NLP resource collection's sentiment dictionaries and Chinese internet slang corpora informed our Chinese degradation keywords (拉胯, 摆烂, 离谱, 逆天, 卧槽, tmd, etc.) and the Chinese booster/negation word lists (非常, 极其, 不, 没 etc.).
 
+### Model Degradation Detection
+
+SentiRoute's AI-response analysis (refusal, hedging, self-repetition, laziness, disclaimer detection) draws on the academic literature for detecting hallucination and quality drift in LLMs:
+
+- **[SelfCheckGPT](https://github.com/potsawee/selfcheckgpt)** (Manakul et al., EMNLP-23, 611★) — The seminal paper on zero-resource black-box hallucination detection via self-consistency. SelfCheckGPT samples N responses and measures inconsistency between them. SentiRoute can't afford N×latency, but the underlying insight — **degraded models produce inconsistent output** — is adapted to a single-response setting via n-gram self-repetition detection (degraded models loop on the same phrases within one response).
+
+- **[UQLM (Uncertainty Quantification for Language Models)](https://github.com/cvs-health/uqlm)** by CVS Health (1.1k★) — A toolkit categorizing LLM uncertainty signals into black-box (consistency), white-box (token probability), and LLM-as-judge approaches. UQLM's signal taxonomy directly informed our `aiRefusal`, `aiHedging`, `aiApology`, and `aiSelfRepetition` signal design. We chose only the signals that work on a single response with zero added latency.
+
+- **[DeepEval](https://github.com/confident-ai/deepeval)** (15k★) — A comprehensive LLM evaluation framework with `HallucinationMetric`, `FaithfulnessMetric`, refusal detection, and bias scoring via LLM-as-judge. While DeepEval requires a judge LLM call (too slow for a proxy), its taxonomy of failure modes (hallucination, lazy completion, off-topic, refusal) directly shaped our signal categories.
+
+- **GPT-4 "got lazy" community observations** (Dec 2023) — Widely documented community-driven finding that GPT-4 began producing placeholder-laden responses ("// ... rest of code unchanged", "I'll provide a high-level outline", "you can implement this part"). Our `LAZINESS_KEYWORDS` dictionary catalogues these known degradation signatures. This isn't a single repo but a community knowledge built from many bug reports, OpenAI forum threads, and the [LMSYS Chatbot Arena](https://chat.lmsys.org/) leaderboard discussions.
+
+- **OpenAI Evals** ([github.com/openai/evals](https://github.com/openai/evals), 18k★) — OpenAI's official eval framework. Provided the conceptual scaffold (acceptance vs refusal, length anomaly, repetition) we use for pattern-based proxy-side detection.
+
 ### Development Workflow
 
 - **[GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done/)** — A structured software development workflow for AI-assisted coding. SentiRoute's entire development lifecycle — requirements gathering, phase planning, architecture design, execution, and verification — was managed through GSD's phase-based workflow system with integrated research, planning, and quality verification gates.
