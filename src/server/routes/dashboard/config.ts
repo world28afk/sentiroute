@@ -17,27 +17,27 @@ const configRoutes: FastifyPluginAsync<ConfigOpts> = async (fastify, opts) => {
   fastify.put('/api/dashboard/config', async (request, reply) => {
     const body = request.body as Record<string, unknown>;
 
+    // Always validate the full merged config with Zod
+    const merged = { ...opts.configManager.config, ...body } as Record<string, unknown>;
+
+    const result = configSchema.safeParse(merged);
+
+    if (!result.success) {
+      const issues = result.error.issues.map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+      }));
+      return reply.code(400).send({
+        error: 'Config validation failed',
+        issues,
+      });
+    }
+
     // Detect if this is a structural change (model_slots) or runtime-only
     const isStructural = body.model_slots !== undefined;
 
     if (isStructural) {
-      // Full config update: merge, validate, replace
-      const merged = { ...opts.configManager.config, ...body } as Record<string, unknown>;
-
-      const result = configSchema.safeParse(merged);
-
-      if (!result.success) {
-        const issues = result.error.issues.map((issue) => ({
-          path: issue.path.join('.'),
-          message: issue.message,
-        }));
-        return reply.code(400).send({
-          error: 'Config validation failed',
-          issues,
-        });
-      }
-
-      // Replace config in memory (breaks proxy route reference — restart needed)
+      // Full config update: replace in memory (breaks proxy route reference — restart needed)
       opts.configManager.config = result.data;
 
       // Async write to disk — fire-and-forget via setImmediate
