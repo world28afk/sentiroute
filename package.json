@@ -1,6 +1,6 @@
 {
   "name": "sentiroute",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sentiment-driven AI upstream adapter",
   "type": "module",
   "main": "dist/index.js",
