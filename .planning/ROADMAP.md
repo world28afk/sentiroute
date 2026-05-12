@@ -85,20 +85,22 @@ Plans:
 ### Phase 6: Web Dashboard (Config Management UI)
 **Goal**: Provide a web-based interface for runtime config management, sentiment state viewing, and upstream configuration editing without requiring YAML file edits
 **Depends on**: Phase 1, Phase 2
-**Requirements**: DASH-06, DASH-08, DASH-09
+**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06, DASH-07, DASH-08
 **Success Criteria** (what must be TRUE):
   1. Server starts with dashboard routes enabled; GET /api/config returns sanitized config with masked API keys
-  2. User can update sentiment parameters (threshold, decayRate, cooldownMs) via POST /api/config/sentiment without restarting the server
-  3. User can update signal weights via POST /api/config/weights without restarting the server
-  4. Structural config changes (model_slots) can be persisted to the YAML config file via POST /api/config/persist
-  5. GET /api/state returns sentiment scores, active upstreams, and switch history per model slot
-  6. No new npm dependencies for server-side modules (uses existing yaml, zod, fastify)
+  2. User can update sentiment parameters (threshold, decayRate, cooldownMs) via PUT /api/dashboard/config without restarting the server
+  3. User can update signal weights via PUT /api/dashboard/config without restarting the server
+  4. Structural config changes (model_slots) can be persisted to the YAML config file with restart banner displayed
+  5. GET /api/dashboard/state returns sentiment scores, active upstreams, and cooldown state per model slot
+  6. GET /api/dashboard/history returns switch event history per model slot
+  7. Dashboard frontend at /dashboard/ shows all data in a single-page browser UI with Alpine.js
+  8. No CDN dependencies — Alpine.js bundled locally, no frontend build step
 **Plans**: 3 plans
 
 Plans:
 - [x] 06-01-PLAN.md -- ConfigManager class, YAML write-back, API key masking
-- [x] 06-02-PLAN.md -- Dashboard API routes (config get/update, state get switch history, slot reset)
-- [ ] 06-03-PLAN.md -- App wiring integration (register routes, CORS for dashboard UI)
+- [x] 06-02-PLAN.md -- Dashboard API routes (config get/update, state get, switch history, slot reset)
+- [x] 06-03-PLAN.md -- Dashboard frontend (Alpine.js SPA), @fastify/static serving, app.ts/index.ts ConfigManager wiring
 
 ## Progress
 
@@ -112,16 +114,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Format Translation | TBD | Not started | - |
 | 4. Sentiment Detection + State Persistence | TBD | Not started | - |
 | 5. Auto-Switch + Polish | TBD | Not started | - |
-| 6. Web Dashboard | 2/3 | In progress | - |
-
-### Phase 6: Web Dashboard — Config management UI, runtime parameter tuning, sentiment state viewer, and upstream configuration editor
-
-**Goal:** User opens http://127.0.0.1:3000/dashboard/ and gets a browser-based config editor with masked API keys, runtime parameter sliders with live hot-update, per-slot sentiment score bars with auto-refresh, switch event history tables, and upstream add/edit/remove capabilities.
-**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06, DASH-07, DASH-08
-**Depends on:** Phase 5
-**Plans:** 3 plans
-
-Plans:
-- [x] 06-01-PLAN.md — ConfigManager class (mutable config wrapper), YAML write-back, API key masking utility
-- [x] 06-02-PLAN.md — Dashboard API routes (config CRUD, sentiment state viewer, switch history, slot reset) as encapsulated Fastify plugin
-- [ ] 06-03-PLAN.md — Dashboard frontend (Alpine.js SPA with dark theme), @fastify/static serving, app.ts/index.ts wiring for ConfigManager
+| 6. Web Dashboard | 3/3 | Complete   | 2026-05-12 |

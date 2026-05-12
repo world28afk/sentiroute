@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
+milestone_name: SentiRoute v1.0
 status: executing
-stopped_at: Completed Phase 6 (06-02-PLAN.md)
-last_updated: "2026-05-12T10:35:24.811Z"
+stopped_at: Completed Phase 6 (06-03-PLAN.md)
+last_updated: "2026-05-12T10:50:00.000Z"
 last_activity: 2026-05-12
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 8
-  completed_plans: 7
-  percent: 88
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State
@@ -25,19 +25,19 @@ See: .planning/PROJECT.md (updated 2026-05-11)
 
 ## Current Position
 
-Phase: 06 (web-dashboard-config-management-ui) — IN PROGRESS (1/3 plans)
+Phase: 06 (web-dashboard-config-management-ui) — COMPLETE
 Last activity: 2026-05-12
 
-Progress: [██████......] 67% (6/9 plans)
+Progress: [██████████] 100% (8/8 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 8
 - Phase 1: 3 plans (~21min total)
 - Phase 2: 2 plans (~23min total)
-- Phase 6: 1 plan (~6min)
+- Phase 6: 3 plans (~15min total)
 
 **By Phase:**
 
@@ -45,7 +45,7 @@ Progress: [██████......] 67% (6/9 plans)
 |-------|-------|----------|
 | 01-foundation | 3 | ~21min |
 | 02-core-proxy-pipeline | 2 | ~23min |
-| 06-web-dashboard | 1 | ~6min |
+| 06-web-dashboard | 3 | ~15min |
 
 ## Accumulated Context
 
@@ -64,6 +64,10 @@ Progress: [██████......] 67% (6/9 plans)
 - [Phase 06-web-dashboard]: PUT /api/dashboard/config merges partial body before Zod validation for partial updates
 - [Phase 06-web-dashboard]: YAML write is fire-and-forget via setImmediate — immediate 200, async disk write
 - [Phase 06-web-dashboard]: switchHistory excluded from state response (dedicated /history endpoint keeps state payload lean)
+- [Phase 06-web-dashboard]: PUT handler uses ConfigManager.updateSentiment() for runtime-only changes to preserve proxy route object references
+- [Phase 06-web-dashboard]: Structural config changes (model_slots) still replace configManager.config fully — restart banner displayed
+- [Phase 06-web-dashboard]: Zod validation runs before branching into structural vs runtime path
+- [Phase 06-web-dashboard]: Dashboard path resolution uses import.meta.url relative path with production check (/dist/ pattern)
 
 ### Blockers/Concerns
 
@@ -71,6 +75,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-12T10:35:24.805Z
-Stopped at: Completed Phase 6 (06-02-PLAN.md)
+Last session: 2026-05-12T10:50:00.000Z
+Stopped at: Completed Phase 6 (06-03-PLAN.md)
 Resume file: None

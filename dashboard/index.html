@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentiRoute Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="alpine.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body x-data="{ activeTab: 'config', dashboardReady: false }" x-init="dashboardReady = true">
+  <header>
+    <h1>SentiRoute Dashboard</h1>
+    <nav>
+      <button @click="activeTab = 'config'" :class="{ active: activeTab === 'config' }">Config</button>
+      <button @click="activeTab = 'sentiment'" :class="{ active: activeTab === 'sentiment' }">Sentiment</button>
+      <button @click="activeTab = 'history'" :class="{ active: activeTab === 'history' }">History</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ═══════════════════════════════════════════════════════
+         CONFIG TAB
+         ═══════════════════════════════════════════════════════ -->
+    <section x-show="activeTab === 'config'" x-cloak x-data="configEditor()" x-init="init()">
+      <div class="card">
+        <h2>Runtime Parameters</h2>
+        <p class="text-muted">Sentiment threshold and signal weights. Changed values take effect immediately on the proxy.</p>
+
+        <div class="param-group">
+          <label class="param-label">
+            <span>Threshold <span class="param-value" x-text="configData.sentiment?.threshold?.toFixed(2) ?? '0.60'"></span></span>
+            <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.threshold">
+          </label>
+
+          <label class="param-label">
+            <span>Decay Rate <span class="param-value" x-text="configData.sentiment?.decayRate?.toFixed(2) ?? '0.10'"></span></span>
+            <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.decayRate">
+          </label>
+
+          <label class="param-label">
+            <span>Cooldown (ms)</span>
+            <input type="number" min="0" step="1000" x-model="configData.sentiment.cooldownMs" class="input-number">
+          </label>
+
+          <label class="param-label">
+            <span>Anti-Flap (ms)</span>
+            <input type="number" min="0" step="1000" x-model="configData.sentiment.antiFlapMs" class="input-number">
+          </label>
+        </div>
+
+        <h3 class="subhead">Signal Weights</h3>
+        <div class="param-group grid-2">
+          <label class="param-label">
+            <span>Profanity <span class="param-value" x-text="configData.sentiment?.weights?.profanity?.toFixed(2) ?? '0.80'"></span></span>
+            <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.profanity">
+          </label>
+          <label class="param-label">
+            <span>Degradation <span class="param-value" x-text="configData.sentiment?.weights?.degradation?.toFixed(2) ?? '0.90'"></span></span>
+            <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.degradation">
+          </label>
+          <label class="param-label">
+            <span>Imperatives <span class="param-value" x-text="configData.sentiment?.weights?.imperatives?.toFixed(2) ?? '0.40'"></span></span>
+            <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.imperatives">
+          </label>
+          <label class="param-label">
+            <span>Caps <span class="param-value" x-text="configData.sentiment?.weights?.caps?.toFixed(2) ?? '0.30'"></span></span>
+            <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.caps">
+          </label>
+          <label class="param-label">
+            <span>Brevity <span class="param-value" x-text="configData.sentiment?.weights?.brevity?.toFixed(2) ?? '0.20'"></span></span>
+            <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.brevity">
+          </label>
+          <label class="param-label">
+            <span>Repetition <span class="param-value" x-text="configData.sentiment?.weights?.repetition?.toFixed(2) ?? '0.60'"></span></span>
+            <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.repetition">
+          </label>
+        </div>
+
+        <button @click="saveRuntimeParams()" class="btn btn-primary" :disabled="loading">Save Runtime Params</button>
+        <p x-show="saveMessage" x-text="saveMessage" class="text-success"></p>
+        <p x-show="saveError" x-text="saveError" class="text-error"></p>
+      </div>
+
+      <!-- Upstream Configuration -->
+      <div class="card">
+        <h2>Upstream Configuration</h2>
+        <p class="text-muted">Per-slot upstream endpoints. Structural changes require a restart.</p>
+
+        <template x-if="loading && !configData.model_slots">
+          <p>Loading...</p>
+        </template>
+
+        <template x-for="(slot, slotId) in configData.model_slots" :key="slotId">
+          <div class="slot-section">
+            <h3 x-text="slotId + ' → ' + (slot.model || '?')" class="slot-heading"></h3>
+
+            <table class="upstream-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Name</th>
+                  <th>Endpoint</th>
+                  <th>API Key</th>
+                  <th>Model</th>
+                  <th>Format</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(upstream, idx) in slot.upstreams" :key="idx">
+                  <tr>
+                    <td x-text="idx + 1"></td>
+                    <td><input type="text" x-model="upstream.name" class="input-sm" placeholder="my-upstream"></td>
+                    <td><input type="text" x-model="upstream.endpoint" class="input-sm" placeholder="https://..."></td>
+                    <td>
+                      <span x-data="{ showKey: false }">
+                        <template x-if="!showKey">
+                          <code class="masked-key" x-text="maskKey(upstream.api_key)"></code>
+                        </template>
+                        <template x-if="showKey">
+                          <code x-text="upstream.api_key"></code>
+                        </template>
+                        <button @click="showKey = !showKey" class="btn btn-sm" x-text="showKey ? 'Hide' : 'Show'"></button>
+                      </span>
+                    </td>
+                    <td><input type="text" x-model="upstream.upstream_model" class="input-sm" placeholder="claude-opus-4.7"></td>
+                    <td>
+                      <select x-model="upstream.format" class="input-sm">
+                        <option value="anthropic">anthropic</option>
+                        <option value="openai">openai</option>
+                      </select>
+                    </td>
+                    <td>
+                      <button @click="removeUpstream(slotId, idx)" class="btn btn-sm btn-danger" :disabled="slot.upstreams.length <= 1">&times;</button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+
+            <button @click="addUpstream(slotId)" class="btn btn-sm">+ Add Upstream</button>
+          </div>
+        </template>
+
+        <div class="save-row">
+          <button @click="saveFullConfig()" class="btn btn-warning" :disabled="loading">Save Full Config</button>
+          <p x-show="saveMessage" x-text="saveMessage" class="text-success"></p>
+          <p x-show="saveError" x-text="saveError" class="text-error"></p>
+        </div>
+      </div>
+
+      <!-- Restart Banner -->
+      <div x-show="restartRecommended" x-cloak class="banner warning">
+        <strong>Config saved.</strong> Restart SentiRoute for structural changes to take effect.
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         SENTIMENT TAB
+         ═══════════════════════════════════════════════════════ -->
+    <section x-show="activeTab === 'sentiment'" x-cloak x-data="sentimentViewer()" x-init="init()">
+      <div class="card">
+        <h2>Sentiment State</h2>
+        <p class="text-muted">Auto-refreshes every 3 seconds. <span x-text="'Last updated: ' + lastUpdated"></span></p>
+
+        <template x-if="error">
+          <p class="text-error" x-text="error"></p>
+        </template>
+
+        <template x-for="(state, slotId) in slots" :key="slotId">
+          <div class="slot-card">
+            <div class="slot-header">
+              <h3 x-text="slotId" class="slot-heading"></h3>
+              <span class="upstream-badge" x-text="'Upstream #' + (state.currentUpstreamIndex + 1)"></span>
+            </div>
+
+            <div class="score-bar">
+              <div class="score-fill" :style="'width: ' + Math.min(state.score * 100, 100) + '%'"
+                   :class="getScoreClass(state.score)"></div>
+            </div>
+
+            <div class="slot-stats">
+              <span>Score: <strong x-text="state.score.toFixed(3)"></strong></span>
+              <span>Triggers: <span x-text="state.triggerCount"></span></span>
+              <span x-show="state.cooldownUntil && state.cooldownUntil > now">
+                Cooldown: <span x-text="formatCooldown(state.cooldownUntil)"></span>
+              </span>
+              <span x-show="!state.cooldownUntil || state.cooldownUntil <= now">
+                Cooldown: none
+              </span>
+            </div>
+
+            <div class="slot-actions">
+              <button @click="resetSlot(slotId)" class="btn btn-sm">Reset Score</button>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="!loading && Object.keys(slots).length === 0">
+          <p class="text-muted">No sentiment data available yet.</p>
+        </template>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         HISTORY TAB
+         ═══════════════════════════════════════════════════════ -->
+    <section x-show="activeTab === 'history'" x-cloak x-data="historyViewer()" x-init="init()">
+      <div class="card">
+        <h2>Switch History</h2>
+        <p class="text-muted">Recent upstream switch events per model slot.</p>
+
+        <template x-if="loading">
+          <p>Loading...</p>
+        </template>
+
+        <template x-if="error">
+          <p class="text-error" x-text="error"></p>
+        </template>
+
+        <template x-for="(slotData, slotId) in slots" :key="slotId">
+          <div class="slot-section">
+            <h3 x-text="slotId" class="slot-heading"></h3>
+
+            <template x-if="slotData.switchHistory.length === 0">
+              <p class="text-muted">No switch events for this slot.</p>
+            </template>
+
+            <template x-if="slotData.switchHistory.length > 0">
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Score</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="ev in slotData.switchHistory" :key="ev.timestamp">
+                    <tr>
+                      <td x-text="formatTime(ev.timestamp)" class="cell-nowrap"></td>
+                      <td x-text="'#' + (ev.fromIndex + 1)"></td>
+                      <td x-text="'#' + (ev.toIndex + 1)"></td>
+                      <td x-text="ev.score.toFixed(3)"></td>
+                      <td x-text="ev.reason"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </template>
+          </div>
+        </template>
+
+        <template x-if="!loading && Object.keys(slots).length === 0">
+          <p class="text-muted">No switch history available.</p>
+        </template>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
