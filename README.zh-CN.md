@@ -337,11 +337,27 @@ SentiRoute 基于与 9router 相同的代理架构，但将路由引擎从配额
 
 ## 致谢
 
-本项目基于以下三个优秀项目：
+### 代理架构
 
 - **[9router](https://github.com/decolua/9router.git)** —— 开创了本地上游适配器代理架构的先驱项目。9router 处理多 API 提供商之间的配额降级。SentiRoute 采用其配置驱动的模型槽位设计、请求头透传策略和上游执行模型，将路由引擎替换为情绪驱动切换。
 
 - **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** —— 基于 Go 的代理，具有生产级的双向 Anthropic ↔ OpenAI 格式翻译。CLIProxyAPI 的内容块生命周期翻译的 SSE 流式状态机模式，是 SentiRoute TypeScript 流式翻译器的直接参考。事件映射逻辑（content_block_start/stop/delta → OpenAI chunks，工具调用索引追踪）借鉴了 CLIProxyAPI 的做法。
+
+### 情绪检测
+
+SentiRoute 的情绪检测引擎站在几十年开源 NLP 研究的肩膀上。以下项目的具体技术和词典条目被融入本项目：
+
+- **[VADER Sentiment Analysis](https://github.com/cjhutto/vaderSentiment)** by C.J. Hutto —— 基于价态感知规则的方法是 SentiRoute 放大器系统的直接灵感来源。经验得出的强度标量（`B_INCR = 0.293`、`C_INCR = 0.733`、`N_SCALAR = -0.74`）、增强/减弱词列表、3 词窗口内的否定处理、标点强调机制全部改编自 VADER 论文（Hutto & Gilbert, ICWSM-14）。没有 VADER，SentiRoute 会把"这模型笨"和"这模型非常笨"当作同一回事。
+
+- **[NRC Emotion Lexicon](https://github.com/DemetersSon83/NRCLex)** (Saif Mohammad, NRC Canada) —— NRC 词-情绪关联词典中的愤怒和厌恶类别启发了我们的降智关键词字典。虽然我们没有打包完整词典（仅限研究使用许可），但其将词语映射到离散情绪类别的概念框架塑造了我们的信号分类。
+
+- **[List of Dirty, Naughty, Obscene, and Otherwise Bad Words](https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words)** (Shutterstock, 3.4k★) —— 作为参考扩充英文脏话词典，仅保留与挫败感相关的词。我们刻意排除了性和歧视类术语（与编程场景无关），只精选了表达用户对模型愤怒的词汇。
+
+- **[google-profanity-words](https://github.com/coffee-and-fun/google-profanity-words)** —— 交叉参考补充了代码挫败语境中常见的轻度英文脏话（如 "damnit"、"crappy"、"screwed up"）。
+
+- **[funNLP](https://github.com/fighting41love/funNLP)** (80k★) —— 这个庞大的中文 NLP 资源集合中的情感词典和中文网络俚语语料启发了我们的中文降智关键词（拉胯、摆烂、离谱、逆天、卧槽、tmd 等）和中文增强/否定词列表（非常、极其、不、没等）。
+
+### 开发工作流
 
 - **[GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done/)** —— 面向 AI 辅助编程的结构化软件开发工作流。SentiRoute 的整个开发生命周期——需求收集、阶段规划、架构设计、执行和验证——均通过 GSD 的阶段式工作流系统进行管理，集成了研究、规划和质量验证关卡。
 

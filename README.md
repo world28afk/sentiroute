@@ -337,11 +337,27 @@ SentiRoute is built on the same proxy architecture as 9router but swaps the rout
 
 ## Acknowledgments
 
-This project stands on the shoulders of three excellent projects:
+### Proxy Architecture
 
 - **[9router](https://github.com/decolua/9router.git)** — The original local upstream adapter that pioneered the proxy architecture SentiRoute is built on. 9router handles quota-based fallback across multiple API providers. SentiRoute adopts its config-driven model slot design, header passthrough strategy, and upstream execution model, replacing the routing engine with sentiment-driven switching.
 
 - **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — A Go-based proxy with production-grade bidirectional Anthropic ↔ OpenAI format translation. CLIProxyAPI's SSE streaming state machine patterns for content block lifecycle translation were the direct reference for SentiRoute's TypeScript streaming translators. The event mapping logic (content_block_start/stop/delta → OpenAI chunks, tool call index tracking) is adapted from CLIProxyAPI's approach.
+
+### Sentiment Detection
+
+SentiRoute's sentiment engine stands on decades of open-source NLP research. Specific techniques and lexicon entries adapted from:
+
+- **[VADER Sentiment Analysis](https://github.com/cjhutto/vaderSentiment)** by C.J. Hutto — The valence-aware rule-based approach is the direct inspiration for SentiRoute's amplifier system. The empirically derived intensity scalars (`B_INCR = 0.293`, `C_INCR = 0.733`, `N_SCALAR = -0.74`), booster/dampener word lists, negation handling within a 3-word window, and punctuation emphasis are all adapted from VADER's paper (Hutto & Gilbert, ICWSM-14). Without VADER, SentiRoute would treat "this is stupid" and "this is EXTREMELY stupid" identically.
+
+- **[NRC Emotion Lexicon](https://github.com/DemetersSon83/NRCLex)** (Saif Mohammad, NRC Canada) — The anger and disgust categories of the NRC Word-Emotion Association Lexicon informed our degradation keyword dictionary. While we don't ship the full lexicon (licensed for research use), the conceptual framework of mapping words to discrete emotion categories shaped our signal taxonomy.
+
+- **[List of Dirty, Naughty, Obscene, and Otherwise Bad Words](https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words)** (Shutterstock, 3.4k★) — Used as a reference to expand the English profanity dictionary with frustration-relevant terms. We deliberately excluded sexual and discriminatory terms (off-topic for coding contexts) and curated only words that signal user anger at the model.
+
+- **[google-profanity-words](https://github.com/coffee-and-fun/google-profanity-words)** — Cross-referenced for mild English profanity that appears in code-frustrated speech (e.g., "damnit", "crappy", "screwed up").
+
+- **[funNLP](https://github.com/fighting41love/funNLP)** (80k★) — The massive Chinese NLP resource collection's sentiment dictionaries and Chinese internet slang corpora informed our Chinese degradation keywords (拉胯, 摆烂, 离谱, 逆天, 卧槽, tmd, etc.) and the Chinese booster/negation word lists (非常, 极其, 不, 没 etc.).
+
+### Development Workflow
 
 - **[GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done/)** — A structured software development workflow for AI-assisted coding. SentiRoute's entire development lifecycle — requirements gathering, phase planning, architecture design, execution, and verification — was managed through GSD's phase-based workflow system with integrated research, planning, and quality verification gates.
 

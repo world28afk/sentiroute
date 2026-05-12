@@ -1,3 +1,18 @@
+/**
+ * Sentiment signal detection — adapted from open-source sentiment analysis research.
+ *
+ * Techniques integrated:
+ * - VADER (Hutto & Gilbert, ICWSM-14) — booster/dampener words, negation handling,
+ *   ALL-CAPS amplifier, punctuation emphasis, empirical scalars (B_INCR, C_INCR, N_SCALAR).
+ *   Reference: https://github.com/cjhutto/vaderSentiment
+ * - NRC Emotion Lexicon — anger/disgust category framework.
+ *   Reference: https://github.com/DemetersSon83/NRCLex
+ * - LDNOOBW + google-profanity-words — curated English profanity terms (frustration-relevant only).
+ *   References: https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words
+ *               https://github.com/coffee-and-fun/google-profanity-words
+ * - funNLP — Chinese sentiment dictionaries and internet slang corpora.
+ *   Reference: https://github.com/fighting41love/funNLP
+ */
 import type { SentimentSignalWeights } from '../config/schema.js';
 
 export const DEFAULT_WEIGHTS: SentimentSignalWeights = {
@@ -16,18 +31,29 @@ export const DEFAULT_WEIGHTS: SentimentSignalWeights = {
 // ── Keyword dictionaries ──
 
 // Strong profanity — high confidence frustration
+// Curated from LDNOOBW and google-profanity-words for frustration-relevant terms only
+// (sexual/discriminatory terms excluded as they are off-topic for coding contexts)
 const PROFANITY_KEYWORDS = [
-  // English
+  // English — core profanity
   'fuck', 'shit', 'damn', 'ass', 'crap', 'garbage', 'trash',
-  'wtf', 'bs', 'bullshit', 'fucking', 'shitty',
-  'motherfucker', 'asshole', 'bitch', 'bastard', 'dickhead',
-  'piece of shit', 'dogshit', 'horse shit', 'clusterfuck',
-  'piss off', 'screw you', 'go to hell', 'eat shit',
-  // Chinese
+  'wtf', 'bs', 'bullshit', 'fucking', 'shitty', 'damnit', 'dammit',
+  'motherfucker', 'asshole', 'bitch', 'bastard', 'dickhead', 'dipshit',
+  'piece of shit', 'dogshit', 'horse shit', 'clusterfuck', 'shitstorm',
+  'piss off', 'screw you', 'go to hell', 'eat shit', 'fuck off',
+  // English — milder but frustrated
+  'goddamn', 'godammit', 'jesus christ', 'for fuck sake', 'for fucks sake',
+  'fucked up', 'fubar', 'snafu', 'crappy', 'sucks', 'sucky',
+  'screwed up', 'fcuk', 'fuk', 'fck', 'shyt', 'biatch',
+  'bollocks', 'wanker', 'tosser', 'bloody hell', 'arse',
+  // Chinese — core
   '垃圾', '废物', '狗屎', '去死', 'sb', '傻逼', '脑残',
   '妈的', '操', '艹', '我靠', '你妈', '草', '日',
   '智障', '白痴', '蠢货', '饭桶', '废柴', '渣',
   '煞笔', '二逼', '逗比', '坑货', '辣鸡', 'lj',
+  // Chinese — milder frustration
+  '尼玛', '泥煤', '我擦', '卧槽', '我去', '靠',
+  '草泥马', 'tmd', '他妈', '他妈的', 'mlgb', 'cnm',
+  '滚蛋', '滚开', '滚', '见鬼', '糟糕', '糟透了',
 ];
 
 // Degradation / 降智 signals — the core detection target
@@ -147,16 +173,147 @@ const APOLOGY_KEYWORDS = [
   '请原谅', '请见谅', '感谢您的耐心', '请稍等',
 ];
 
+// ── VADER-inspired amplifiers ──
+// Adapted from VADER (Hutto & Gilbert, 2014). Empirically derived intensity scalars.
+
+const B_INCR = 0.293; // booster word increment
+const B_DECR = -0.293; // dampener word decrement
+const C_INCR = 0.733; // ALL-CAPS amplifier on a keyword itself
+const N_SCALAR = -0.74; // negation scalar (flips/dampens valence)
+
+// Booster words — amplify the sentiment intensity of a nearby keyword
+const BOOSTER_WORDS: Record<string, number> = {
+  // English boosters (B_INCR)
+  'absolutely': B_INCR, 'amazingly': B_INCR, 'awfully': B_INCR,
+  'completely': B_INCR, 'considerably': B_INCR, 'decidedly': B_INCR,
+  'deeply': B_INCR, 'effing': B_INCR, 'enormously': B_INCR,
+  'entirely': B_INCR, 'especially': B_INCR, 'exceptionally': B_INCR,
+  'extremely': B_INCR, 'fabulously': B_INCR, 'flipping': B_INCR,
+  'fricking': B_INCR, 'frigging': B_INCR, 'fully': B_INCR,
+  'fucking': B_INCR, 'greatly': B_INCR, 'hella': B_INCR,
+  'highly': B_INCR, 'hugely': B_INCR, 'incredibly': B_INCR,
+  'intensely': B_INCR, 'majorly': B_INCR, 'particularly': B_INCR,
+  'really': B_INCR, 'remarkably': B_INCR, 'so': B_INCR,
+  'substantially': B_INCR, 'thoroughly': B_INCR, 'totally': B_INCR,
+  'tremendously': B_INCR, 'unbelievably': B_INCR, 'utterly': B_INCR,
+  'very': B_INCR, 'super': B_INCR, 'mega': B_INCR,
+  // English dampeners (B_DECR)
+  'almost': B_DECR, 'barely': B_DECR, 'hardly': B_DECR,
+  'kind of': B_DECR, 'kinda': B_DECR, 'less': B_DECR,
+  'marginally': B_DECR, 'occasionally': B_DECR, 'partly': B_DECR,
+  'scarcely': B_DECR, 'slightly': B_DECR, 'somewhat': B_DECR,
+  'sort of': B_DECR, 'sorta': B_DECR, 'a bit': B_DECR,
+  // Chinese boosters
+  '非常': B_INCR, '极其': B_INCR, '极度': B_INCR, '极': B_INCR,
+  '太': B_INCR, '超': B_INCR, '超级': B_INCR, '巨': B_INCR,
+  '特别': B_INCR, '特': B_INCR, '十分': B_INCR, '相当': B_INCR,
+  '真是': B_INCR, '真的': B_INCR, '真': B_INCR, '完全': B_INCR,
+  '简直': B_INCR, '彻底': B_INCR, '绝对': B_INCR, '老': B_INCR,
+  // Chinese dampeners
+  '有点': B_DECR, '有些': B_DECR, '稍微': B_DECR, '略': B_DECR,
+  '稍': B_DECR, '不太': B_DECR, '不怎么': B_DECR,
+};
+
+// Negation words — flip or dampen sentiment of following keyword
+const NEGATE_WORDS = new Set([
+  // English
+  'not', 'never', 'no', 'none', 'nothing', 'nowhere', 'nope',
+  'cannot', 'cant', "can't", 'wont', "won't", 'isnt', "isn't",
+  'arent', "aren't", 'wasnt', "wasn't", 'werent', "weren't",
+  'dont', "don't", 'doesnt', "doesn't", 'didnt', "didn't",
+  'hasnt', "hasn't", 'havent', "haven't", 'hadnt', "hadn't",
+  'shouldnt', "shouldn't", 'wouldnt', "wouldn't", 'couldnt', "couldn't",
+  'rarely', 'seldom', 'without', 'neither', 'nor',
+  // Chinese
+  '不', '没', '没有', '别', '勿', '未', '非', '无',
+  '不是', '不会', '不能', '不要', '不该',
+]);
+
 // ── Scoring helpers ──
 
+/**
+ * Tokenize text into words, preserving original case for cap detection.
+ * Splits on whitespace and punctuation, but keeps the words themselves intact.
+ */
+function tokenizeWords(text: string): string[] {
+  return text.split(/[\s,.;:!?()\[\]{}'"`]+/).filter(Boolean);
+}
+
+/**
+ * VADER-inspired keyword scoring with booster, negation, and emphasis amplifiers.
+ *
+ * Adapted from VADER (Hutto & Gilbert, ICWSM-14):
+ * - Booster words (e.g., "extremely", "非常") amplify nearby keyword intensity
+ * - Negation words (e.g., "not", "不") flip or dampen following keyword
+ * - ALL-CAPS keyword gets C_INCR boost
+ * - Repeated punctuation ("!!!" or "???") adds emphasis
+ */
 function keywordScore(text: string, keywords: readonly string[]): number {
   const lower = text.toLowerCase();
+  const words = tokenizeWords(text);
+  const lowerWords = words.map((w) => w.toLowerCase());
+
+  // Count base hits (substring match for multi-word keywords)
+  let totalValence = 0;
   let hits = 0;
+
   for (const kw of keywords) {
-    if (lower.includes(kw)) hits++;
+    if (!lower.includes(kw)) continue;
+    hits++;
+
+    let valence = 1.0;
+
+    // Locate the keyword's first word in the tokenized list for context analysis
+    const kwFirstWord = kw.split(/\s+/)[0]!.toLowerCase();
+    const idx = lowerWords.indexOf(kwFirstWord);
+
+    if (idx >= 0) {
+      // Check ALL-CAPS on the matched word itself (VADER C_INCR)
+      const origWord = words[idx]!;
+      if (origWord.length >= 3 && origWord === origWord.toUpperCase() && /[A-Z]/.test(origWord)) {
+        valence += C_INCR;
+      }
+
+      // Check up to 3 preceding words for boosters and negators (VADER window)
+      for (let i = 1; i <= 3 && idx - i >= 0; i++) {
+        const prev = lowerWords[idx - i]!;
+        // Negation flips/dampens (VADER N_SCALAR)
+        if (NEGATE_WORDS.has(prev)) {
+          valence *= N_SCALAR;
+          break; // negation found, stop scanning
+        }
+        // Booster amplifies (decays with distance)
+        const boost = BOOSTER_WORDS[prev];
+        if (boost !== undefined) {
+          // Apply with distance decay (farther = less effect)
+          const decay = 1 - (i - 1) * 0.05;
+          valence += boost * decay;
+          // Boost itself in caps gets extra
+          const origPrev = words[idx - i]!;
+          if (origPrev === origPrev.toUpperCase() && origPrev.length >= 3) {
+            valence += C_INCR * 0.5;
+          }
+        }
+      }
+    }
+
+    // Punctuation emphasis: trailing !!! or ??? near keyword
+    const exclaimMatch = text.match(/[!]{1,4}/g);
+    if (exclaimMatch) {
+      const totalExclaim = exclaimMatch.join('').length;
+      valence += Math.min(0.292, totalExclaim * 0.292 * 0.25);
+    }
+
+    // Clamp negative valence to 0 (negated frustration becomes neutral, not anti-frustration)
+    totalValence += Math.max(0, valence);
   }
-  // Cap at 5 hits = 1.0 (raised from 3)
-  return Math.min(1.0, hits / 5);
+
+  if (hits === 0) return 0;
+
+  // Average valence × hits/5 cap, then clamp
+  const avgValence = totalValence / hits;
+  const baseScore = Math.min(1.0, hits / 5);
+  return Math.min(1.0, baseScore * avgValence);
 }
 
 function capsRatioScore(text: string): number {

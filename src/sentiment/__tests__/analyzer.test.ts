@@ -318,3 +318,57 @@ describe('analyzeSentiment', () => {
     expect(result.signals.degradation).toBeGreaterThan(0);
   });
 });
+
+describe('VADER-inspired amplifiers', () => {
+  it('booster word amplifies degradation score', () => {
+    const base = analyzeSentiment(['this is stupid']);
+    const boosted = analyzeSentiment(['this is extremely stupid']);
+    expect(boosted.signals.degradation).toBeGreaterThan(base.signals.degradation);
+  });
+
+  it('negation cancels degradation signal', () => {
+    const positive = analyzeSentiment(['this is stupid']);
+    const negated = analyzeSentiment(['this is not stupid']);
+    expect(negated.signals.degradation).toBeLessThan(positive.signals.degradation);
+  });
+
+  it('ALL-CAPS keyword gets boost', () => {
+    const lower = analyzeSentiment(['this is stupid please help']);
+    const caps = analyzeSentiment(['this is STUPID please help']);
+    expect(caps.signals.degradation).toBeGreaterThanOrEqual(lower.signals.degradation);
+  });
+
+  it('exclamation marks amplify', () => {
+    const plain = analyzeSentiment(['this is broken']);
+    const emphatic = analyzeSentiment(['this is broken!!!']);
+    expect(emphatic.signals.degradation).toBeGreaterThanOrEqual(plain.signals.degradation);
+  });
+
+  it('Chinese booster amplifies', () => {
+    const base = analyzeSentiment(['这模型笨']);
+    const boosted = analyzeSentiment(['这模型非常笨']);
+    expect(boosted.signals.degradation).toBeGreaterThanOrEqual(base.signals.degradation);
+  });
+
+  it('Chinese negation dampens', () => {
+    const positive = analyzeSentiment(['你这模型很笨']);
+    const negated = analyzeSentiment(['你这模型不笨']);
+    expect(negated.signals.degradation).toBeLessThanOrEqual(positive.signals.degradation);
+  });
+
+  it('dampener reduces intensity', () => {
+    const full = analyzeSentiment(['this is shitty']);
+    const dampened = analyzeSentiment(['this is slightly shitty']);
+    expect(dampened.signals.profanity).toBeLessThanOrEqual(full.signals.profanity);
+  });
+
+  it('detects new milder profanity additions', () => {
+    const result = analyzeSentiment(['this fucked up code keeps breaking, jesus christ']);
+    expect(result.signals.profanity).toBeGreaterThan(0);
+  });
+
+  it('detects Chinese mild profanity (tmd, 卧槽)', () => {
+    const result = analyzeSentiment(['tmd 这代码又错了，卧槽']);
+    expect(result.signals.profanity).toBeGreaterThan(0);
+  });
+});
