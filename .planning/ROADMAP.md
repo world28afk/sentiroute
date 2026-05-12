@@ -97,7 +97,7 @@ Plans:
 
 Plans:
 - [x] 06-01-PLAN.md -- ConfigManager class, YAML write-back, API key masking
-- [ ] 06-02-PLAN.md -- Dashboard API routes (config get/update, state get)
+- [x] 06-02-PLAN.md -- Dashboard API routes (config get/update, state get switch history, slot reset)
 - [ ] 06-03-PLAN.md -- App wiring integration (register routes, CORS for dashboard UI)
 
 ## Progress
@@ -112,7 +112,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Format Translation | TBD | Not started | - |
 | 4. Sentiment Detection + State Persistence | TBD | Not started | - |
 | 5. Auto-Switch + Polish | TBD | Not started | - |
-| 6. Web Dashboard | 1/3 | In progress | - |
+| 6. Web Dashboard | 2/3 | In progress | - |
 
 ### Phase 6: Web Dashboard — Config management UI, runtime parameter tuning, sentiment state viewer, and upstream configuration editor
 
@@ -123,5 +123,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 Plans:
 - [x] 06-01-PLAN.md — ConfigManager class (mutable config wrapper), YAML write-back, API key masking utility
-- [ ] 06-02-PLAN.md — Dashboard API routes (config CRUD, sentiment state viewer, switch history, slot reset) as encapsulated Fastify plugin
+- [x] 06-02-PLAN.md — Dashboard API routes (config CRUD, sentiment state viewer, switch history, slot reset) as encapsulated Fastify plugin
 - [ ] 06-03-PLAN.md — Dashboard frontend (Alpine.js SPA with dark theme), @fastify/static serving, app.ts/index.ts wiring for ConfigManager

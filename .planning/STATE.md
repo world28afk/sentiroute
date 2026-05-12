@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: SentiRoute v1.0
+milestone_name: milestone
 status: executing
-stopped_at: Completed Phase 6 (06-01-PLAN.md)
-last_updated: "2026-05-12T10:21:00.000Z"
+stopped_at: Completed Phase 6 (06-02-PLAN.md)
+last_updated: "2026-05-12T10:35:24.811Z"
 last_activity: 2026-05-12
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 9
-  completed_plans: 6
-  percent: 67
+  total_plans: 8
+  completed_plans: 7
+  percent: 88
 ---
 
 # Project State
@@ -60,6 +60,10 @@ Progress: [██████......] 67% (6/9 plans)
 - [Phase 06-web-dashboard]: Comment loss on YAML write-back accepted — dashboard IS the config editor
 - [Phase 06-web-dashboard]: ConfigManager.config is a public mutable property for per-request visibility
 - [Phase 06-web-dashboard]: Hot-updates synchronous, persistence async (persistToDisk)
+- [Phase 06-web-dashboard]: Dashboard API routes receive ConfigManager/SentimentState via Fastify opts DI pattern
+- [Phase 06-web-dashboard]: PUT /api/dashboard/config merges partial body before Zod validation for partial updates
+- [Phase 06-web-dashboard]: YAML write is fire-and-forget via setImmediate — immediate 200, async disk write
+- [Phase 06-web-dashboard]: switchHistory excluded from state response (dedicated /history endpoint keeps state payload lean)
 
 ### Blockers/Concerns
 
@@ -67,6 +71,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-12T10:21:00.000Z
-Stopped at: Completed Phase 6 (06-01-PLAN.md)
+Last session: 2026-05-12T10:35:24.805Z
+Stopped at: Completed Phase 6 (06-02-PLAN.md)
 Resume file: None
