@@ -2,7 +2,7 @@
 
 ## Overview
 
-SentiRoute is a local Node.js/TypeScript HTTP proxy that monitors user sentiment in AI coding tool conversations and automatically switches upstream providers when it detects model degradation or user frustration. This roadmap covers the v1.0 build across 5 phases: project foundation, core proxy pipeline, format translation, sentiment detection with state persistence, and finishing with auto-switch behavior and observability tooling.
+SentiRoute is a local Node.js/TypeScript HTTP proxy that monitors user sentiment in AI coding tool conversations and automatically switches upstream providers when it detects model degradation or user frustration. This roadmap covers the v1.0 build across 6 phases: project foundation, core proxy pipeline, format translation, sentiment detection with state persistence, auto-switch behavior and observability tooling, and a web dashboard for config management and runtime monitoring.
 
 ## Phases
 
@@ -82,10 +82,30 @@ Plans:
   5. `sentiroute status` CLI command shows current sentiment scores per slot, active upstreams, upstream type (primary/backup), and recent switch history
 **Plans**: TBD
 
+### Phase 6: Web Dashboard (Config Management UI)
+**Goal**: Provide a web-based interface for runtime config management, sentiment state viewing, and upstream configuration editing without requiring YAML file edits
+**Depends on**: Phase 1, Phase 2
+**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06, DASH-07, DASH-08
+**Success Criteria** (what must be TRUE):
+  1. Server starts with dashboard routes enabled; GET /api/config returns sanitized config with masked API keys
+  2. User can update sentiment parameters (threshold, decayRate, cooldownMs) via PUT /api/dashboard/config without restarting the server
+  3. User can update signal weights via PUT /api/dashboard/config without restarting the server
+  4. Structural config changes (model_slots) can be persisted to the YAML config file with restart banner displayed
+  5. GET /api/dashboard/state returns sentiment scores, active upstreams, and cooldown state per model slot
+  6. GET /api/dashboard/history returns switch event history per model slot
+  7. Dashboard frontend at /dashboard/ shows all data in a single-page browser UI with Alpine.js
+  8. No CDN dependencies — Alpine.js bundled locally, no frontend build step
+**Plans**: 3 plans
+
+Plans:
+- [x] 06-01-PLAN.md -- ConfigManager class, YAML write-back, API key masking
+- [x] 06-02-PLAN.md -- Dashboard API routes (config get/update, state get, switch history, slot reset)
+- [x] 06-03-PLAN.md -- Dashboard frontend (Alpine.js SPA), @fastify/static serving, app.ts/index.ts ConfigManager wiring
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -94,3 +114,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 3. Format Translation | TBD | Not started | - |
 | 4. Sentiment Detection + State Persistence | TBD | Not started | - |
 | 5. Auto-Switch + Polish | TBD | Not started | - |
+| 6. Web Dashboard | 3/3 | Complete   | 2026-05-12 |
