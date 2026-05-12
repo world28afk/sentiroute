@@ -82,10 +82,28 @@ Plans:
   5. `sentiroute status` CLI command shows current sentiment scores per slot, active upstreams, upstream type (primary/backup), and recent switch history
 **Plans**: TBD
 
+### Phase 6: Web Dashboard (Config Management UI)
+**Goal**: Provide a web-based interface for runtime config management, sentiment state viewing, and upstream configuration editing without requiring YAML file edits
+**Depends on**: Phase 1, Phase 2
+**Requirements**: DASH-06, DASH-08, DASH-09
+**Success Criteria** (what must be TRUE):
+  1. Server starts with dashboard routes enabled; GET /api/config returns sanitized config with masked API keys
+  2. User can update sentiment parameters (threshold, decayRate, cooldownMs) via POST /api/config/sentiment without restarting the server
+  3. User can update signal weights via POST /api/config/weights without restarting the server
+  4. Structural config changes (model_slots) can be persisted to the YAML config file via POST /api/config/persist
+  5. GET /api/state returns sentiment scores, active upstreams, and switch history per model slot
+  6. No new npm dependencies for server-side modules (uses existing yaml, zod, fastify)
+**Plans**: 3 plans
+
+Plans:
+- [x] 06-01-PLAN.md -- ConfigManager class, YAML write-back, API key masking
+- [ ] 06-02-PLAN.md -- Dashboard API routes (config get/update, state get)
+- [ ] 06-03-PLAN.md -- App wiring integration (register routes, CORS for dashboard UI)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -94,3 +112,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 3. Format Translation | TBD | Not started | - |
 | 4. Sentiment Detection + State Persistence | TBD | Not started | - |
 | 5. Auto-Switch + Polish | TBD | Not started | - |
+| 6. Web Dashboard | 1/3 | In progress | - |

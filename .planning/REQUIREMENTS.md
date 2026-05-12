@@ -49,6 +49,12 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **STATE-02**: Write-queued atomic file persistence — no corruption under concurrent requests
 - [ ] **STATE-03**: Graceful shutdown — flush pending state writes before exit
 
+### Dashboard (DASH)
+
+- [x] **DASH-06**: Shared mutable ConfigManager class wrapping Config object for runtime config mutation by route handlers
+- [x] **DASH-08**: API key masking utility -- recursive masking of api_key fields to first 2 + last 6 chars for safe API responses
+- [ ] **DASH-09**: YAML config persistence -- write-back from in-memory Config to YAML file on disk
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -115,10 +121,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STATE-01 | Phase 4 | Pending |
 | STATE-02 | Phase 4 | Pending |
 | STATE-03 | Phase 4 | Pending |
+| DASH-06 | Phase 6 | Complete |
+| DASH-08 | Phase 6 | Complete |
+| DASH-09 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 24 total
-- Complete: 10 (CORE-01 through CORE-05, CONF-01, CONF-03, CONF-04, OBS-01, OBS-03)
+- v1 requirements: 27 total (added DASH requirements)
+- Complete: 12 (CORE-01 through CORE-05, CONF-01, CONF-03, CONF-04, OBS-01, OBS-03, DASH-06, DASH-08)
 - Mapped to Phase 1: 3 (CORE-03, CONF-01, CONF-03) ✓ All complete
 - Mapped to Phase 2: 7 (CORE-01, CORE-02, CORE-04, CORE-05, CONF-04, OBS-01, OBS-03) ✓ All complete
 - Mapped to Phase 3: 3 (FMT-01, FMT-02, FMT-03)
