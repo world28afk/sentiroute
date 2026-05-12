@@ -6,6 +6,27 @@ import type { SentimentState } from '../../../sentiment/state.js';
 
 type ConfigOpts = { configManager: ConfigManager; sentimentState: SentimentState };
 
+/** Detect masked API keys: "sk...Fjrjs" or "***" */
+function isMaskedKey(s: string): boolean {
+  return s === '***' || /^[^.]{2,}\.\.\..{2,}$/.test(s);
+}
+
+/** Merge incoming model_slots with existing, preserving real api_keys */
+function preserveMaskedKeys(
+  incoming: Record<string, { upstreams: { api_key: string }[] }>,
+  existing: Record<string, { upstreams: { api_key: string }[] }>,
+): void {
+  for (const [slotId, slot] of Object.entries(incoming)) {
+    const orig = existing[slotId];
+    if (!orig) continue;
+    for (let i = 0; i < slot.upstreams.length; i++) {
+      if (slot.upstreams[i] && orig.upstreams[i] && isMaskedKey(slot.upstreams[i].api_key)) {
+        slot.upstreams[i].api_key = orig.upstreams[i].api_key;
+      }
+    }
+  }
+}
+
 const configRoutes: FastifyPluginAsync<ConfigOpts> = async (fastify, opts) => {
   // GET /api/dashboard/config — return sanitized config with masked API keys
   // Pass ?reveal_keys=true to get raw keys (for editing in the dashboard)
@@ -42,6 +63,11 @@ const configRoutes: FastifyPluginAsync<ConfigOpts> = async (fastify, opts) => {
     const isStructural = body.model_slots !== undefined;
 
     if (isStructural) {
+      // Preserve real api_keys — the frontend sends masked keys for untouched upstreams
+      const incoming = result.data.model_slots as Record<string, { upstreams: { api_key: string }[] }>;
+      const existing = opts.configManager.config.model_slots as Record<string, { upstreams: { api_key: string }[] }>;
+      preserveMaskedKeys(incoming, existing);
+
       // Full config update: replace in memory (breaks proxy route reference — restart needed)
       opts.configManager.config = result.data;
 
