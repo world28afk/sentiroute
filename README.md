@@ -50,7 +50,7 @@ npm run build && npm start
 
 Once the server is running, open **http://127.0.0.1:3000/dashboard/** for a browser-based config editor:
 
-- **Config tab** — edit upstream endpoints, API keys, model mappings
+- **Config tab** — edit upstream endpoints, API keys, model mappings, proxy authentication
 - **Sentiment tab** — per-slot score bars with live auto-refresh
 - **History tab** — switch event timeline with timestamps and reasons
 - **Runtime params** — sliders for threshold, decay rate, cooldown (hot-update, no restart)
@@ -121,6 +121,7 @@ Full `sentiroute.yaml` with all available options:
 server:
   host: '127.0.0.1'     # Bind address
   port: 3000             # Bind port
+  # api_key: 'your-secret-key'  # Clients must provide this key to call the proxy. Remove or leave empty to disable.
 
 model_slots:
   # Slot key = how you refer to this model in your coding tool
@@ -219,6 +220,17 @@ SentiRoute exposes a standard LLM proxy surface:
 | `GET /health` | JSON | Uptime, config, active upstreams |
 
 Both POST endpoints support **streaming (SSE)** and translate formats automatically when needed.
+
+### Proxy Authentication
+
+When `server.api_key` is set in `sentiroute.yaml`, all proxy endpoints (`/v1/messages`, `/v1/chat/completions`) require authentication. Clients must provide the key via:
+
+- `Authorization: Bearer <key>` header, or
+- `x-api-key: <key>` header
+
+The `/health`, `/dashboard/`, and `/api/dashboard/` endpoints are exempt from authentication and remain publicly accessible.
+
+If `server.api_key` is not set or empty, authentication is disabled (all requests pass through).
 
 Response headers:
 

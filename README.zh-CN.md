@@ -50,7 +50,7 @@ npm run build && npm start
 
 服务启动后，打开 **http://127.0.0.1:3000/dashboard/** 进入浏览器配置面板：
 
-- **Config 标签** — 编辑上游端点、API key、模型映射
+- **Config 标签** — 编辑上游端点、API key、模型映射、代理鉴权
 - **Sentiment 标签** — 各槽位分数条，实时自动刷新
 - **History 标签** — 切换事件时间线，含时间戳和原因
 - **运行时参数** — 阈值、衰减率、冷却时间滑块（热更新，无需重启）
@@ -121,6 +121,7 @@ SentiRoute 支持 Anthropic Messages API 与 OpenAI Chat Completions API 之间�
 server:
   host: '127.0.0.1'     # 绑定地址
   port: 3000             # 绑定端口
+  # api_key: 'your-secret-key'  # 调用代理时需要提供此 key。留空或删除则禁用鉴权。
 
 model_slots:
   # 槽位键 = 你在编程工具里怎么称呼这个模型
@@ -219,6 +220,17 @@ SentiRoute 提供标准的 LLM 代理接口：
 | `GET /health` | JSON | 运行时间、配置、当前上游状态 |
 
 两个 POST 端点均支持**流式传输（SSE）**，并在需要时自动翻译格式。
+
+### 代理鉴权
+
+在 `sentiroute.yaml` 中设置 `server.api_key` 后，所有代理端点（`/v1/messages`、`/v1/chat/completions`）均需鉴权。客户端需通过以下方式之一提供密钥：
+
+- `Authorization: Bearer <key>` 请求头，或
+- `x-api-key: <key>` 请求头
+
+`/health`、`/dashboard/` 和 `/api/dashboard/` 端点免鉴权，始终可公开访问。
+
+如果未设置 `server.api_key` 或为空，则禁用鉴权（所有请求直接通过）。
 
 响应头：
 
