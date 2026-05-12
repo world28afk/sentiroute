@@ -91,6 +91,17 @@ nav button.active {
   border-bottom-color: var(--accent);
 }
 
+nav button.lang-btn {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+nav button.lang-btn:hover {
+  background: var(--bg-input);
+}
 /* ── Cards ── */
 .card {
   background: var(--bg-card);

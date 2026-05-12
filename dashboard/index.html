@@ -5,16 +5,429 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SentiRoute Dashboard</title>
   <link rel="stylesheet" href="styles.css">
-  <script defer src="alpine.min.js"></script>
-  <script defer src="app.js"></script>
 </head>
 <body x-data="{ activeTab: 'config', dashboardReady: false }" x-init="dashboardReady = true">
+
+  <!-- ═══ i18n translations + store + component definitions (inline) ═══ -->
+  <script>
+    const I18N_MESSAGES = {
+      en: {
+        dashboardTitle: 'SentiRoute Dashboard',
+        tabConfig: 'Config',
+        tabSentiment: 'Sentiment',
+        tabHistory: 'History',
+        langToggle: '中文',
+        runtimeParams: 'Runtime Parameters',
+        runtimeParamsDesc: 'Sentiment threshold and signal weights. Changed values take effect immediately on the proxy.',
+        threshold: 'Threshold',
+        decayRate: 'Decay Rate',
+        cooldownMs: 'Cooldown (ms)',
+        antiFlapMs: 'Anti-Flap (ms)',
+        signalWeights: 'Signal Weights',
+        profanity: 'Profanity',
+        degradation: 'Degradation',
+        imperatives: 'Imperatives',
+        caps: 'Caps',
+        brevity: 'Brevity',
+        repetition: 'Repetition',
+        saveRuntime: 'Save Runtime Params',
+        upstreamConfig: 'Upstream Configuration',
+        upstreamDesc: 'Per-slot upstream endpoints. Structural changes require a restart.',
+        loading: 'Loading...',
+        colIndex: '#',
+        colName: 'Name',
+        colEndpoint: 'Endpoint',
+        colApiKey: 'API Key',
+        colModel: 'Model',
+        colFormat: 'Format',
+        show: 'Show',
+        hide: 'Hide',
+        edit: 'Edit',
+        confirm: 'Confirm',
+        cancel: 'Cancel',
+        empty: '(empty)',
+        addUpstream: '+ Add Upstream',
+        saveFullConfig: 'Save Full Config',
+        restartBanner: 'Config saved. Restart SentiRoute for structural changes to take effect.',
+        saveSuccess: 'Saved successfully.',
+        saveFailed: 'Save failed',
+        sentimentState: 'Sentiment State',
+        sentimentDesc: 'Auto-refreshes every 3 seconds.',
+        lastUpdated: 'Last updated',
+        score: 'Score',
+        triggers: 'Triggers',
+        cooldown: 'Cooldown',
+        none: 'none',
+        resetScore: 'Reset Score',
+        noSentimentData: 'No sentiment data available yet.',
+        upstreamLabel: 'Upstream #',
+        switchHistory: 'Switch History',
+        historyDesc: 'Recent upstream switch events per model slot.',
+        colTime: 'Time',
+        colFrom: 'From',
+        colTo: 'To',
+        colScore: 'Score',
+        colReason: 'Reason',
+        noSwitchEvents: 'No switch events for this slot.',
+        noHistory: 'No switch history available.',
+        exceededThreshold: 'exceeded threshold',
+        sentimentRecovered: 'sentiment recovered',
+        manualReset: 'manual reset',
+      },
+      'zh-CN': {
+        dashboardTitle: 'SentiRoute 控制面板',
+        tabConfig: '配置',
+        tabSentiment: '情绪',
+        tabHistory: '历史',
+        langToggle: 'English',
+        runtimeParams: '运行时参数',
+        runtimeParamsDesc: '情绪阈值和信号权重。修改后立即对代理生效。',
+        threshold: '阈值',
+        decayRate: '衰减率',
+        cooldownMs: '冷却时间 (毫秒)',
+        antiFlapMs: '防抖时间 (毫秒)',
+        signalWeights: '信号权重',
+        profanity: '脏话',
+        degradation: '降智',
+        imperatives: '命令式',
+        caps: '大写',
+        brevity: '简短',
+        repetition: '重复',
+        saveRuntime: '保存运行时参数',
+        upstreamConfig: '上游配置',
+        upstreamDesc: '各槽位上游端点。结构性修改需重启生效。',
+        loading: '加载中...',
+        colIndex: '#',
+        colName: '名称',
+        colEndpoint: '端点',
+        colApiKey: 'API 密钥',
+        colModel: '模型',
+        colFormat: '格式',
+        show: '显示',
+        hide: '隐藏',
+        edit: '修改',
+        confirm: '确定',
+        cancel: '取消',
+        empty: '(空)',
+        addUpstream: '+ 添加上游',
+        saveFullConfig: '保存完整配置',
+        restartBanner: '配置已保存。重启 SentiRoute 使结构性修改生效。',
+        saveSuccess: '保存成功。',
+        saveFailed: '保存失败',
+        sentimentState: '情绪状态',
+        sentimentDesc: '每 3 秒自动刷新。',
+        lastUpdated: '最后更新',
+        score: '分数',
+        triggers: '触发次数',
+        cooldown: '冷却',
+        none: '无',
+        resetScore: '重置分数',
+        noSentimentData: '暂无情绪数据。',
+        upstreamLabel: '上游 #',
+        switchHistory: '切换历史',
+        historyDesc: '各模型槽位的近期上游切换事件。',
+        colTime: '时间',
+        colFrom: '从',
+        colTo: '到',
+        colScore: '分数',
+        colReason: '原因',
+        noSwitchEvents: '该槽位无切换事件。',
+        noHistory: '无切换历史。',
+        exceededThreshold: '超过阈值',
+        sentimentRecovered: '情绪恢复',
+        manualReset: '手动重置',
+      },
+    };
+
+    document.addEventListener('alpine:init', () => {
+      const saved = (() => { try { return localStorage.getItem('sentiroute-locale'); } catch(e) { return null; } })();
+      const initial = (saved === 'zh-CN' || saved === 'en') ? saved : 'en';
+
+      Alpine.store('i18n', {
+        locale: initial,
+        t(key) {
+          const msgs = I18N_MESSAGES[this.locale] || I18N_MESSAGES['en'];
+          return msgs[key] ?? I18N_MESSAGES['en'][key] ?? key;
+        },
+        toggle() {
+          this.locale = this.locale === 'en' ? 'zh-CN' : 'en';
+          try { localStorage.setItem('sentiroute-locale', this.locale); } catch(e) {}
+        },
+      });
+    });
+  </script>
+
+  <!-- ═══ Alpine.js component definitions (inline) ═══ -->
+  <script>
+    document.addEventListener('alpine:init', () => {
+
+      Alpine.data('configEditor', () => ({
+        configData: {
+          server: { port: 3000, host: '127.0.0.1' },
+          sentiment: {
+            threshold: 0.6,
+            decayRate: 0.1,
+            cooldownMs: 300000,
+            antiFlapMs: 60000,
+            weights: {
+              profanity: 0.8,
+              degradation: 0.9,
+              imperatives: 0.4,
+              caps: 0.3,
+              brevity: 0.2,
+              repetition: 0.6,
+            },
+          },
+          model_slots: {},
+        },
+        loading: true,
+        error: '',
+        saveMessage: '',
+        saveError: '',
+        restartRecommended: false,
+        rawKeys: {}, // slotId -> idx -> raw api_key
+
+        get t() { return this.$store.i18n.t.bind(this.$store.i18n); },
+
+        async init() {
+          await this.fetchConfig();
+          await this.fetchRawKeys();
+        },
+
+        async fetchConfig() {
+          this.loading = true;
+          this.error = '';
+          try {
+            const res = await fetch('/api/dashboard/config');
+            if (!res.ok) throw new Error(this.t('saveFailed'));
+            this.configData = await res.json();
+          } catch (e) {
+            this.error = e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        async fetchRawKeys() {
+          try {
+            const res = await fetch('/api/dashboard/config?reveal_keys=true');
+            if (!res.ok) return;
+            const raw = await res.json();
+            const keys = {};
+            if (raw.model_slots) {
+              for (const [slotId, slot] of Object.entries(raw.model_slots)) {
+                keys[slotId] = (slot.upstreams || []).map(u => u.api_key || '');
+              }
+            }
+            this.rawKeys = keys;
+          } catch (e) { /* ignore */ }
+        },
+
+        async saveRuntimeParams() {
+          this.saveMessage = '';
+          this.saveError = '';
+          try {
+            const body = {
+              sentiment: {
+                threshold: Number(this.configData.sentiment.threshold),
+                decayRate: Number(this.configData.sentiment.decayRate),
+                cooldownMs: Number(this.configData.sentiment.cooldownMs),
+                antiFlapMs: Number(this.configData.sentiment.antiFlapMs),
+                weights: { ...this.configData.sentiment.weights },
+              },
+            };
+            const res = await fetch('/api/dashboard/config', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const result = await res.json();
+            if (res.ok) {
+              this.saveMessage = result.message || this.t('saveSuccess');
+              this.restartRecommended = result.restartRecommended;
+            } else {
+              this.saveError = result.error || this.t('saveFailed');
+              if (result.issues && result.issues.length) {
+                this.saveError += ': ' + result.issues.map(function(i) { return i.path + ' ' + i.message; }).join('; ');
+              }
+            }
+          } catch (e) {
+            this.saveError = e.message;
+          }
+        },
+
+        async saveFullConfig() {
+          this.saveMessage = '';
+          this.saveError = '';
+          try {
+            const payload = { model_slots: this.configData.model_slots };
+            const res = await fetch('/api/dashboard/config', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const result = await res.json();
+            if (res.ok) {
+              this.saveMessage = result.message || this.t('saveSuccess');
+              this.restartRecommended = result.restartRecommended;
+              await this.fetchConfig();
+            } else {
+              this.saveError = result.error || this.t('saveFailed');
+              if (result.issues && result.issues.length) {
+                this.saveError += ': ' + result.issues.map(function(i) { return i.path + ' ' + i.message; }).join('; ');
+              }
+            }
+          } catch (e) {
+            this.saveError = e.message;
+          }
+        },
+
+        addUpstream(slotId) {
+          const slot = this.configData.model_slots[slotId];
+          if (!slot) return;
+          slot.upstreams.push({
+            name: '',
+            endpoint: 'https://api.example.com/v1',
+            api_key: '',
+            upstream_model: '',
+            format: 'anthropic',
+            timeoutMs: 120000,
+          });
+        },
+
+        removeUpstream(slotId, index) {
+          const slot = this.configData.model_slots[slotId];
+          if (!slot || slot.upstreams.length <= 1) return;
+          slot.upstreams.splice(index, 1);
+        },
+
+        maskKey(key) {
+          if (!key) return this.t('empty');
+          if (key.length <= 8) return '***';
+          return key.slice(0, 2) + '...' + key.slice(-6);
+        },
+      }));
+
+      Alpine.data('sentimentViewer', () => ({
+        slots: {},
+        threshold: 0.6,
+        now: Date.now(),
+        lastUpdated: '—',
+        interval: null,
+        error: '',
+        loading: true,
+
+        get t() { return this.$store.i18n.t.bind(this.$store.i18n); },
+
+        init() {
+          this.fetchState();
+          this.interval = setInterval(() => this.fetchState(), 3000);
+        },
+
+        destroy() {
+          if (this.interval) clearInterval(this.interval);
+        },
+
+        async fetchState() {
+          try {
+            const res = await fetch('/api/dashboard/state');
+            if (!res.ok) throw new Error(this.t('saveFailed'));
+            const data = await res.json();
+            this.slots = data.slots;
+            this.threshold = data.threshold;
+            this.now = Date.now();
+            this.lastUpdated = new Date().toLocaleTimeString();
+            this.error = '';
+          } catch (e) {
+            this.error = e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        formatCooldown(until) {
+          if (!until) return '—';
+          const remaining = Math.max(0, until - Date.now());
+          if (remaining <= 0) return this.t('none');
+          const s = Math.floor(remaining / 1000);
+          if (s < 60) return s + 's';
+          const m = Math.floor(s / 60);
+          if (m < 60) return m + 'm ' + (s % 60) + 's';
+          const h = Math.floor(m / 60);
+          return h + 'h ' + (m % 60) + 'm';
+        },
+
+        getScoreClass(score) {
+          if (score == null) return 'safe';
+          return score > this.threshold ? 'danger' : 'safe';
+        },
+
+        async resetSlot(slotId) {
+          try {
+            const res = await fetch('/api/dashboard/reset/' + encodeURIComponent(slotId), { method: 'POST' });
+            await res.json();
+            await this.fetchState();
+          } catch (e) {
+            console.error('Reset failed', e);
+          }
+        },
+      }));
+
+      Alpine.data('historyViewer', () => ({
+        slots: {},
+        loading: true,
+        error: '',
+
+        get t() { return this.$store.i18n.t.bind(this.$store.i18n); },
+
+        async init() {
+          await this.fetchHistory();
+        },
+
+        async fetchHistory() {
+          this.loading = true;
+          this.error = '';
+          try {
+            const res = await fetch('/api/dashboard/history');
+            if (!res.ok) throw new Error(this.t('saveFailed'));
+            const data = await res.json();
+            this.slots = data.slots;
+          } catch (e) {
+            this.error = e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        formatTime(ts) {
+          if (!ts) return '—';
+          return new Date(ts).toLocaleString();
+        },
+
+        translateReason(reason) {
+          if (!reason) return '—';
+          const map = {
+            'exceeded threshold': this.t('exceededThreshold'),
+            'sentiment recovered': this.t('sentimentRecovered'),
+            'manual reset': this.t('manualReset'),
+          };
+          return map[reason] || reason;
+        },
+      }));
+
+    });
+  </script>
+
+  <!-- ═══ Alpine.js (loaded LAST — must be after all alpine:init listeners) ═══ -->
+  <script src="alpine.min.js"></script>
+
   <header>
-    <h1>SentiRoute Dashboard</h1>
+    <h1 x-text="$store.i18n.t('dashboardTitle')">SentiRoute Dashboard</h1>
     <nav>
-      <button @click="activeTab = 'config'" :class="{ active: activeTab === 'config' }">Config</button>
-      <button @click="activeTab = 'sentiment'" :class="{ active: activeTab === 'sentiment' }">Sentiment</button>
-      <button @click="activeTab = 'history'" :class="{ active: activeTab === 'history' }">History</button>
+      <button @click="activeTab = 'config'" :class="{ active: activeTab === 'config' }" x-text="$store.i18n.t('tabConfig')">Config</button>
+      <button @click="activeTab = 'sentiment'" :class="{ active: activeTab === 'sentiment' }" x-text="$store.i18n.t('tabSentiment')">Sentiment</button>
+      <button @click="activeTab = 'history'" :class="{ active: activeTab === 'history' }" x-text="$store.i18n.t('tabHistory')">History</button>
+      <button @click="$store.i18n.toggle()" class="lang-btn" x-text="$store.i18n.t('langToggle')">中文</button>
     </nav>
   </header>
 
@@ -24,71 +437,71 @@
          ═══════════════════════════════════════════════════════ -->
     <section x-show="activeTab === 'config'" x-cloak x-data="configEditor()" x-init="init()">
       <div class="card">
-        <h2>Runtime Parameters</h2>
-        <p class="text-muted">Sentiment threshold and signal weights. Changed values take effect immediately on the proxy.</p>
+        <h2 x-text="$store.i18n.t('runtimeParams')">Runtime Parameters</h2>
+        <p class="text-muted" x-text="$store.i18n.t('runtimeParamsDesc')">Sentiment threshold and signal weights.</p>
 
         <div class="param-group">
           <label class="param-label">
-            <span>Threshold <span class="param-value" x-text="configData.sentiment?.threshold?.toFixed(2) ?? '0.60'"></span></span>
+            <span><span x-text="$store.i18n.t('threshold')">Threshold</span> <span class="param-value" x-text="configData.sentiment?.threshold?.toFixed(2) ?? '0.60'"></span></span>
             <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.threshold">
           </label>
 
           <label class="param-label">
-            <span>Decay Rate <span class="param-value" x-text="configData.sentiment?.decayRate?.toFixed(2) ?? '0.10'"></span></span>
+            <span><span x-text="$store.i18n.t('decayRate')">Decay Rate</span> <span class="param-value" x-text="configData.sentiment?.decayRate?.toFixed(2) ?? '0.10'"></span></span>
             <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.decayRate">
           </label>
 
           <label class="param-label">
-            <span>Cooldown (ms)</span>
+            <span x-text="$store.i18n.t('cooldownMs')">Cooldown (ms)</span>
             <input type="number" min="0" step="1000" x-model="configData.sentiment.cooldownMs" class="input-number">
           </label>
 
           <label class="param-label">
-            <span>Anti-Flap (ms)</span>
+            <span x-text="$store.i18n.t('antiFlapMs')">Anti-Flap (ms)</span>
             <input type="number" min="0" step="1000" x-model="configData.sentiment.antiFlapMs" class="input-number">
           </label>
         </div>
 
-        <h3 class="subhead">Signal Weights</h3>
+        <h3 class="subhead" x-text="$store.i18n.t('signalWeights')">Signal Weights</h3>
         <div class="param-group grid-2">
           <label class="param-label">
-            <span>Profanity <span class="param-value" x-text="configData.sentiment?.weights?.profanity?.toFixed(2) ?? '0.80'"></span></span>
+            <span><span x-text="$store.i18n.t('profanity')">Profanity</span> <span class="param-value" x-text="configData.sentiment?.weights?.profanity?.toFixed(2) ?? '0.80'"></span></span>
             <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.profanity">
           </label>
           <label class="param-label">
-            <span>Degradation <span class="param-value" x-text="configData.sentiment?.weights?.degradation?.toFixed(2) ?? '0.90'"></span></span>
+            <span><span x-text="$store.i18n.t('degradation')">Degradation</span> <span class="param-value" x-text="configData.sentiment?.weights?.degradation?.toFixed(2) ?? '0.90'"></span></span>
             <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.degradation">
           </label>
           <label class="param-label">
-            <span>Imperatives <span class="param-value" x-text="configData.sentiment?.weights?.imperatives?.toFixed(2) ?? '0.40'"></span></span>
+            <span><span x-text="$store.i18n.t('imperatives')">Imperatives</span> <span class="param-value" x-text="configData.sentiment?.weights?.imperatives?.toFixed(2) ?? '0.40'"></span></span>
             <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.imperatives">
           </label>
           <label class="param-label">
-            <span>Caps <span class="param-value" x-text="configData.sentiment?.weights?.caps?.toFixed(2) ?? '0.30'"></span></span>
+            <span><span x-text="$store.i18n.t('caps')">Caps</span> <span class="param-value" x-text="configData.sentiment?.weights?.caps?.toFixed(2) ?? '0.30'"></span></span>
             <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.caps">
           </label>
           <label class="param-label">
-            <span>Brevity <span class="param-value" x-text="configData.sentiment?.weights?.brevity?.toFixed(2) ?? '0.20'"></span></span>
+            <span><span x-text="$store.i18n.t('brevity')">Brevity</span> <span class="param-value" x-text="configData.sentiment?.weights?.brevity?.toFixed(2) ?? '0.20'"></span></span>
             <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.brevity">
           </label>
           <label class="param-label">
-            <span>Repetition <span class="param-value" x-text="configData.sentiment?.weights?.repetition?.toFixed(2) ?? '0.60'"></span></span>
+            <span><span x-text="$store.i18n.t('repetition')">Repetition</span> <span class="param-value" x-text="configData.sentiment?.weights?.repetition?.toFixed(2) ?? '0.60'"></span></span>
             <input type="range" min="0" max="1" step="0.05" x-model="configData.sentiment.weights.repetition">
           </label>
         </div>
 
-        <button @click="saveRuntimeParams()" class="btn btn-primary" :disabled="loading">Save Runtime Params</button>
+        <button @click="saveRuntimeParams()" class="btn btn-primary" :disabled="loading" x-text="$store.i18n.t('saveRuntime')">Save Runtime Params</button>
         <p x-show="saveMessage" x-text="saveMessage" class="text-success"></p>
         <p x-show="saveError" x-text="saveError" class="text-error"></p>
       </div>
 
       <!-- Upstream Configuration -->
       <div class="card">
-        <h2>Upstream Configuration</h2>
-        <p class="text-muted">Per-slot upstream endpoints. Structural changes require a restart.</p>
+        <h2 x-text="$store.i18n.t('upstreamConfig')">Upstream Configuration</h2>
+        <p class="text-muted" x-text="$store.i18n.t('upstreamDesc')">Per-slot upstream endpoints.</p>
 
         <template x-if="loading && !configData.model_slots">
-          <p>Loading...</p>
+          <p x-text="$store.i18n.t('loading')">Loading...</p>
         </template>
 
         <template x-for="(slot, slotId) in configData.model_slots" :key="slotId">
@@ -98,12 +511,12 @@
             <table class="upstream-table">
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th>Name</th>
-                  <th>Endpoint</th>
-                  <th>API Key</th>
-                  <th>Model</th>
-                  <th>Format</th>
+                  <th x-text="$store.i18n.t('colIndex')">#</th>
+                  <th x-text="$store.i18n.t('colName')">Name</th>
+                  <th x-text="$store.i18n.t('colEndpoint')">Endpoint</th>
+                  <th x-text="$store.i18n.t('colApiKey')">API Key</th>
+                  <th x-text="$store.i18n.t('colModel')">Model</th>
+                  <th x-text="$store.i18n.t('colFormat')">Format</th>
                   <th></th>
                 </tr>
               </thead>
@@ -114,14 +527,20 @@
                     <td><input type="text" x-model="upstream.name" class="input-sm" placeholder="my-upstream"></td>
                     <td><input type="text" x-model="upstream.endpoint" class="input-sm" placeholder="https://..."></td>
                     <td>
-                      <span x-data="{ showKey: false }">
-                        <template x-if="!showKey">
-                          <code class="masked-key" x-text="maskKey(upstream.api_key)"></code>
+                      <span x-data="{ editingKey: false, tempKey: '' }">
+                        <template x-if="!editingKey">
+                          <span>
+                            <code class="masked-key" x-text="maskKey(upstream.api_key)"></code>
+                            <button @click="editingKey = true; tempKey = (rawKeys[slotId] && rawKeys[slotId][idx]) || ''; $nextTick(() => $refs.editInput.focus())" class="btn btn-sm" x-text="$store.i18n.t('edit')">修改</button>
+                          </span>
                         </template>
-                        <template x-if="showKey">
-                          <code x-text="upstream.api_key"></code>
+                        <template x-if="editingKey">
+                          <span>
+                            <input type="text" x-model="tempKey" x-ref="editInput" class="input-sm" style="min-width:220px;max-width:320px" placeholder="sk-..." @keydown.enter="if(tempKey){upstream.api_key = tempKey}; editingKey = false" @keydown.escape="editingKey = false">
+                            <button @click="if(tempKey){upstream.api_key = tempKey}; editingKey = false" class="btn btn-sm btn-primary" x-text="$store.i18n.t('confirm')">确定</button>
+                            <button @click="editingKey = false" class="btn btn-sm" x-text="$store.i18n.t('cancel')">取消</button>
+                          </span>
                         </template>
-                        <button @click="showKey = !showKey" class="btn btn-sm" x-text="showKey ? 'Hide' : 'Show'"></button>
                       </span>
                     </td>
                     <td><input type="text" x-model="upstream.upstream_model" class="input-sm" placeholder="claude-opus-4.7"></td>
@@ -139,12 +558,12 @@
               </tbody>
             </table>
 
-            <button @click="addUpstream(slotId)" class="btn btn-sm">+ Add Upstream</button>
+            <button @click="addUpstream(slotId)" class="btn btn-sm" x-text="$store.i18n.t('addUpstream')">+ Add Upstream</button>
           </div>
         </template>
 
         <div class="save-row">
-          <button @click="saveFullConfig()" class="btn btn-warning" :disabled="loading">Save Full Config</button>
+          <button @click="saveFullConfig()" class="btn btn-warning" :disabled="loading" x-text="$store.i18n.t('saveFullConfig')">Save Full Config</button>
           <p x-show="saveMessage" x-text="saveMessage" class="text-success"></p>
           <p x-show="saveError" x-text="saveError" class="text-error"></p>
         </div>
@@ -152,7 +571,7 @@
 
       <!-- Restart Banner -->
       <div x-show="restartRecommended" x-cloak class="banner warning">
-        <strong>Config saved.</strong> Restart SentiRoute for structural changes to take effect.
+        <strong x-text="$store.i18n.t('restartBanner')">Config saved. Restart SentiRoute for structural changes to take effect.</strong>
       </div>
     </section>
 
@@ -161,8 +580,11 @@
          ═══════════════════════════════════════════════════════ -->
     <section x-show="activeTab === 'sentiment'" x-cloak x-data="sentimentViewer()" x-init="init()">
       <div class="card">
-        <h2>Sentiment State</h2>
-        <p class="text-muted">Auto-refreshes every 3 seconds. <span x-text="'Last updated: ' + lastUpdated"></span></p>
+        <h2 x-text="$store.i18n.t('sentimentState')">Sentiment State</h2>
+        <p class="text-muted">
+          <span x-text="$store.i18n.t('sentimentDesc')">Auto-refreshes every 3 seconds.</span>
+          <span x-text="$store.i18n.t('lastUpdated') + ': ' + lastUpdated"></span>
+        </p>
 
         <template x-if="error">
           <p class="text-error" x-text="error"></p>
@@ -172,7 +594,7 @@
           <div class="slot-card">
             <div class="slot-header">
               <h3 x-text="slotId" class="slot-heading"></h3>
-              <span class="upstream-badge" x-text="'Upstream #' + (state.currentUpstreamIndex + 1)"></span>
+              <span class="upstream-badge" x-text="$store.i18n.t('upstreamLabel') + (state.currentUpstreamIndex + 1)"></span>
             </div>
 
             <div class="score-bar">
@@ -181,24 +603,24 @@
             </div>
 
             <div class="slot-stats">
-              <span>Score: <strong x-text="state.score.toFixed(3)"></strong></span>
-              <span>Triggers: <span x-text="state.triggerCount"></span></span>
+              <span><span x-text="$store.i18n.t('score')">Score</span>: <strong x-text="state.score.toFixed(3)"></strong></span>
+              <span><span x-text="$store.i18n.t('triggers')">Triggers</span>: <span x-text="state.triggerCount"></span></span>
               <span x-show="state.cooldownUntil && state.cooldownUntil > now">
-                Cooldown: <span x-text="formatCooldown(state.cooldownUntil)"></span>
+                <span x-text="$store.i18n.t('cooldown')">Cooldown</span>: <span x-text="formatCooldown(state.cooldownUntil)"></span>
               </span>
               <span x-show="!state.cooldownUntil || state.cooldownUntil <= now">
-                Cooldown: none
+                <span x-text="$store.i18n.t('cooldown')">Cooldown</span>: <span x-text="$store.i18n.t('none')">none</span>
               </span>
             </div>
 
             <div class="slot-actions">
-              <button @click="resetSlot(slotId)" class="btn btn-sm">Reset Score</button>
+              <button @click="resetSlot(slotId)" class="btn btn-sm" x-text="$store.i18n.t('resetScore')">Reset Score</button>
             </div>
           </div>
         </template>
 
         <template x-if="!loading && Object.keys(slots).length === 0">
-          <p class="text-muted">No sentiment data available yet.</p>
+          <p class="text-muted" x-text="$store.i18n.t('noSentimentData')">No sentiment data available yet.</p>
         </template>
       </div>
     </section>
@@ -208,11 +630,11 @@
          ═══════════════════════════════════════════════════════ -->
     <section x-show="activeTab === 'history'" x-cloak x-data="historyViewer()" x-init="init()">
       <div class="card">
-        <h2>Switch History</h2>
-        <p class="text-muted">Recent upstream switch events per model slot.</p>
+        <h2 x-text="$store.i18n.t('switchHistory')">Switch History</h2>
+        <p class="text-muted" x-text="$store.i18n.t('historyDesc')">Recent upstream switch events per model slot.</p>
 
         <template x-if="loading">
-          <p>Loading...</p>
+          <p x-text="$store.i18n.t('loading')">Loading...</p>
         </template>
 
         <template x-if="error">
@@ -224,18 +646,18 @@
             <h3 x-text="slotId" class="slot-heading"></h3>
 
             <template x-if="slotData.switchHistory.length === 0">
-              <p class="text-muted">No switch events for this slot.</p>
+              <p class="text-muted" x-text="$store.i18n.t('noSwitchEvents')">No switch events for this slot.</p>
             </template>
 
             <template x-if="slotData.switchHistory.length > 0">
               <table class="history-table">
                 <thead>
                   <tr>
-                    <th>Time</th>
-                    <th>From</th>
-                    <th>To</th>
-                    <th>Score</th>
-                    <th>Reason</th>
+                    <th x-text="$store.i18n.t('colTime')">Time</th>
+                    <th x-text="$store.i18n.t('colFrom')">From</th>
+                    <th x-text="$store.i18n.t('colTo')">To</th>
+                    <th x-text="$store.i18n.t('colScore')">Score</th>
+                    <th x-text="$store.i18n.t('colReason')">Reason</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -245,7 +667,7 @@
                       <td x-text="'#' + (ev.fromIndex + 1)"></td>
                       <td x-text="'#' + (ev.toIndex + 1)"></td>
                       <td x-text="ev.score.toFixed(3)"></td>
-                      <td x-text="ev.reason"></td>
+                      <td x-text="translateReason(ev.reason)"></td>
                     </tr>
                   </template>
                 </tbody>
@@ -255,7 +677,7 @@
         </template>
 
         <template x-if="!loading && Object.keys(slots).length === 0">
-          <p class="text-muted">No switch history available.</p>
+          <p class="text-muted" x-text="$store.i18n.t('noHistory')">No switch history available.</p>
         </template>
       </div>
     </section>

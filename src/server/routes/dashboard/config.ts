@@ -8,8 +8,13 @@ type ConfigOpts = { configManager: ConfigManager; sentimentState: SentimentState
 
 const configRoutes: FastifyPluginAsync<ConfigOpts> = async (fastify, opts) => {
   // GET /api/dashboard/config — return sanitized config with masked API keys
-  fastify.get('/api/dashboard/config', async (_req, reply) => {
+  // Pass ?reveal_keys=true to get raw keys (for editing in the dashboard)
+  fastify.get('/api/dashboard/config', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
+    const reveal = (request.query as Record<string, string>).reveal_keys === 'true';
+    if (reveal) {
+      return structuredClone(opts.configManager.config);
+    }
     return opts.configManager.getSanitizedConfig();
   });
 

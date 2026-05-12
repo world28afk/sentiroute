@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Config } from '../config/schema.js';
@@ -32,10 +33,9 @@ export async function createApp(configManager: ConfigManager, sentimentState: Se
 
   // ── Static file serving for dashboard ──
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  const isProduction = __dirname.includes('/dist/') || __dirname.includes('\\dist\\');
-  const dashboardRoot = isProduction
-    ? join(__dirname, 'dashboard')          // dist/ -> dist/dashboard/
-    : join(__dirname, '..', '..', 'dashboard'); // src/server/ -> dashboard/
+  const distDashboard = join(__dirname, 'dashboard');
+  const srcDashboard = join(__dirname, '..', '..', 'dashboard');
+  const dashboardRoot = existsSync(distDashboard) ? distDashboard : srcDashboard;
 
   await app.register(FastifyStatic, {
     root: dashboardRoot,

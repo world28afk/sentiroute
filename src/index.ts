@@ -117,10 +117,10 @@ async function main(): Promise<void> {
     console.log(`SentiRoute v${VERSION}  ${address}`);
     console.log(`Config: ${configPath}${created ? ' (created with defaults)' : ''}`);
     console.log(`Slots: ${slots}`);
-    console.log(`POST   ${address}v1/messages`);
-    console.log(`POST   ${address}v1/chat/completions`);
-    console.log(`GET    ${address}health`);
-    console.log(`Dashboard: ${address}dashboard/`);
+    console.log(`POST   ${address}/v1/messages`);
+    console.log(`POST   ${address}/v1/chat/completions`);
+    console.log(`GET    ${address}/health`);
+    console.log(`Dashboard: ${address}/dashboard/`);
   });
 
   // Graceful shutdown
