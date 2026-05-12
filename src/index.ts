@@ -1,11 +1,12 @@
 import { loadConfig } from './config/loader.js';
+import { ConfigManager } from './config/manager.js';
 import { createApp } from './server/app.js';
 import { resolveConfigPath } from './config/paths.js';
 import { VERSION } from './utils/version.js';
 import { SentimentState } from './sentiment/state.js';
 import type { SentimentConfig } from './config/schema.js';
 
-function main(): void {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   // ── CLI: status command ──
@@ -23,21 +24,22 @@ function main(): void {
   }
 
   const config = loadConfig(configPath);
+  const configManager = new ConfigManager(config, configPath);
 
   const stateDir = config._configPath
     ? undefined
     : process.cwd();
 
   const sentimentState = new SentimentState(stateDir);
-  const app = createApp(config, sentimentState);
+  const app = await createApp(configManager, sentimentState);
 
-  app.listen({ port: config.server.port, host: config.server.host }, (err, address) => {
+  app.listen({ port: configManager.config.server.port, host: configManager.config.server.host }, (err, address) => {
     if (err) {
       console.error('Failed to start:', (err as Error).message);
       process.exit(1);
     }
 
-    const slots = Object.entries(config.model_slots)
+    const slots = Object.entries(configManager.config.model_slots)
       .map(([key, slot]) => `${key} → ${slot.model} (${slot.upstreams.length} upstreams)`)
       .join(', ');
 
@@ -47,6 +49,7 @@ function main(): void {
     console.log(`POST ${address}/v1/messages`);
     console.log(`POST ${address}/v1/chat/completions`);
     console.log(`GET  ${address}/health`);
+    console.log(`Dashboard: ${address}dashboard/`);
   });
 
   // Graceful shutdown
