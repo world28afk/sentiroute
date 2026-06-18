@@ -29,12 +29,6 @@ Unlike [9router](https://github.com/decolua/9router.git) which switches on quota
 
 See [Configuration Reference](#configuration-reference) for the new YAML blocks.
 
-## Sponsor
-
-Thank you to **[RemixCodes](https://remix.codes/)** for sponsoring this project!
-
-RemixCodes is a reliable and efficient API relay provider, offering unified API access to Claude and GPT models. 1:1 RMB-to-USD credit ratio, Claude as low as 0.5x, GPT-5.5 at 0.3x. No foreign cards, no geo-fencing.
-
 ## Quick Start
 
 ```bash

@@ -29,12 +29,6 @@ SentiRoute 是一个**本地 HTTP 代理**，部署在你的 AI 编程工具和�
 
 详见下方的 [配置参考](#配置参考)。
 
-## 赞助
-
-感谢 **[RemixCodes](https://remix.codes/)** 对本项目的赞助！
-
-RemixCodes 是一家可靠高效的 API 中转服务商，提供 Claude 和 GPT 全系模型的统一 API 接入。充值 1:1 人民币兑美元，Claude 低至 0.5 倍率，GPT-5.5 低至 0.3 倍率。无需海外信用卡，无地域封锁。
-
 ## 快速开始
 
 ```bash
