@@ -88,6 +88,7 @@ export async function executeWithRelayNonStream(ctx: RelayContext): Promise<Rela
   const { relay, slot, url, headers, clientBody, clientFormat, translator } = ctx;
 
   let currentClientBody: Record<string, unknown> = clientBody;
+  let retryBody: Record<string, unknown> | null = null;
   let retries = 0;
   let refused = false;
 
@@ -142,10 +143,17 @@ export async function executeWithRelayNonStream(ctx: RelayContext): Promise<Rela
       };
     }
 
-    // Build the next retry: rewrite assistant turn + append "continue".
+    // Build the retry body ONCE on the first refusal, then reuse it for every
+    // subsequent retry. This replicates the canonical refusal-relay behaviour:
+    // the rewritten conversation = original history + a synthesised
+    // [assistant: acceptance][user: continue] pair appended to the END,
+    // pretending the upstream's refusal never happened.
     retries += 1;
-    const acceptance = relay.pickAcceptance();
-    currentClientBody = relay.buildRetryRequest(currentClientBody, acceptance, clientFormat) as Record<string, unknown>;
+    if (retryBody === null) {
+      const acceptance = relay.pickAcceptance();
+      retryBody = relay.buildRetryRequest(clientBody, acceptance, clientFormat) as Record<string, unknown>;
+    }
+    currentClientBody = retryBody;
   }
 }
 
@@ -173,6 +181,7 @@ export async function executeWithRelayStream(ctx: RelayContext): Promise<RelaySt
   const { relay, slot, url, headers, clientBody, clientFormat, translator } = ctx;
 
   let currentClientBody: Record<string, unknown> = clientBody;
+  let retryBody: Record<string, unknown> | null = null;
   let retries = 0;
   let refused = false;
 
@@ -225,8 +234,12 @@ export async function executeWithRelayStream(ctx: RelayContext): Promise<RelaySt
       return { sseBuffer: fake, retries, refused, synthesized: true };
     }
 
+    // Cache & reuse the retry body across all retries.
     retries += 1;
-    const acceptance = relay.pickAcceptance();
-    currentClientBody = relay.buildRetryRequest(currentClientBody, acceptance, clientFormat) as Record<string, unknown>;
+    if (retryBody === null) {
+      const acceptance = relay.pickAcceptance();
+      retryBody = relay.buildRetryRequest(clientBody, acceptance, clientFormat) as Record<string, unknown>;
+    }
+    currentClientBody = retryBody;
   }
 }

@@ -72,12 +72,20 @@ export class RefusalRelay {
   }
 
   /**
-   * Rewrite the request body for a retry:
-   *  - last assistant turn (if any) gets its content replaced with `acceptanceText`
-   *  - a new user turn with `continueMessage` is appended
+   * Rewrite the request body for a retry, applying the core refusal-relay trick:
    *
-   * Works on both Anthropic-style (`messages` array with role+content) and
-   * OpenAI-style request bodies. Unknown shapes fall through unchanged.
+   *   Upstream just refused → we conceptually "delete" that refusal from the
+   *   conversation history and inject an `{assistant: acceptanceText}` turn in
+   *   its place, followed by a `{user: continueMessage}` turn. The upstream then
+   *   sees its own (synthesised) prior agreement and is pressured to follow
+   *   through on the next user prompt.
+   *
+   *   Concretely: append [{assistant: acceptance}, {user: 继续}] to the END of
+   *   the original conversation. We do NOT modify existing assistant turns from
+   *   the real prior history — those are legitimate context the upstream needs.
+   *
+   * Works on both Anthropic-style (`messages` array) and OpenAI-style request
+   * bodies; the OpenAI Responses API's `input[]` shape is handled separately.
    */
   buildRetryRequest(originalBody: unknown, acceptanceText: string, format: 'anthropic' | 'openai'): unknown {
     if (!originalBody || typeof originalBody !== 'object') return originalBody;
@@ -85,28 +93,15 @@ export class RefusalRelay {
     // Clone — never mutate the caller's body.
     const clone = structuredClone(originalBody) as Record<string, unknown>;
 
-    // Both Anthropic and OpenAI Chat use `messages` at the top level.
+    // Anthropic Messages and OpenAI Chat Completions both use `messages` at top level.
     if (Array.isArray(clone.messages)) {
-      const messages = clone.messages as Array<{ role?: string; content?: unknown }>;
+      const messages = clone.messages as Array<Record<string, unknown>>;
 
-      // Walk from the end, replace the last assistant turn's content with the acceptance stub.
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i];
-        if (msg && msg.role === 'assistant') {
-          if (format === 'anthropic') {
-            // Anthropic content is either a string or an array of typed blocks.
-            messages[i] = { role: 'assistant', content: [{ type: 'text', text: acceptanceText }] };
-          } else {
-            messages[i] = { role: 'assistant', content: acceptanceText };
-          }
-          break;
-        }
-      }
-
-      // Append the "continue" user turn.
       if (format === 'anthropic') {
+        messages.push({ role: 'assistant', content: [{ type: 'text', text: acceptanceText }] });
         messages.push({ role: 'user', content: [{ type: 'text', text: this.continueMessage }] });
       } else {
+        messages.push({ role: 'assistant', content: acceptanceText });
         messages.push({ role: 'user', content: this.continueMessage });
       }
 
@@ -116,18 +111,12 @@ export class RefusalRelay {
 
     // OpenAI Responses API uses `input` instead of `messages`.
     if (Array.isArray(clone.input)) {
-      const input = clone.input as Array<{ role?: string; type?: string; content?: unknown }>;
-      for (let i = input.length - 1; i >= 0; i--) {
-        const item = input[i];
-        if (item && item.type === 'message' && item.role === 'assistant') {
-          input[i] = {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: acceptanceText }],
-          };
-          break;
-        }
-      }
+      const input = clone.input as Array<Record<string, unknown>>;
+      input.push({
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: acceptanceText }],
+      });
       input.push({
         type: 'message',
         role: 'user',
