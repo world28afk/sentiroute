@@ -2,6 +2,19 @@
  * Sentiment signal detection — adapted from open-source sentiment analysis
  * and model-degradation research.
  *
+ * v0.4 overhaul (the "useless and pretty" → "decisive" pass):
+ *   1. Word-boundary matching for ASCII keywords (kills 'no' inside 'no problem',
+ *      'ass' inside 'assistant', 'sucks' inside 'success').
+ *   2. Hard-trigger phrases (e.g. "you're useless", "降智了吧", "stop refusing me")
+ *      jump the score to 0.95 immediately, bypassing the weighted-average dilution
+ *      that previously kept maxed-out scores well below the 0.6 threshold.
+ *   3. Positive-sentiment reset — when the user just thanked/praised the model, the
+ *      final score is halved so a momentarily-elevated history doesn't trigger a
+ *      switch right after the model recovered.
+ *   4. Max-aggregation for high-confidence signals (profanity, degradation) instead
+ *      of averaging them away with low-weight noise.
+ *   5. Compound bonus when ≥2 signal categories fire (multiple kinds of evidence).
+ *
  * Sentiment / lexicon techniques:
  * - VADER (Hutto & Gilbert, ICWSM-14) — booster/dampener words, negation handling,
  *   ALL-CAPS amplifier, punctuation emphasis, empirical scalars (B_INCR, C_INCR, N_SCALAR).
@@ -42,6 +55,99 @@ export const DEFAULT_WEIGHTS: SentimentSignalWeights = {
   aiDisclaimer: 0.3,
   aiSelfRepetition: 0.5,
 };
+
+// ── Hard-trigger phrases ────────────────────────────────────────────────
+//
+// These bypass weighted averaging entirely. A single match pins the score
+// to HARD_TRIGGER_SCORE so the switch fires *this* request, not three
+// frustrated turns later.
+
+const HARD_TRIGGER_SCORE = 0.95;
+
+const HARD_TRIGGER_PATTERNS: readonly RegExp[] = [
+  // English — direct attack on the model's identity / competence
+  /\byou(?:'?re|\s+are)\s+(?:fucking\s+|literally\s+|so\s+)?(?:useless|broken|hopeless|incompetent|worthless|garbage|trash|the\s+worst|braindead|brain[-\s]?dead)\b/i,
+  /\bfuck(?:ing)?\s+(?:off|you)\b/i,
+  /\bstop\s+(?:refusing|being\s+lazy|wasting\s+my\s+time|making\s+excuses|hallucinating)\b/i,
+  /\bjust\s+(?:fucking\s+|do\s+what|do\s+as)\s+(?:do\s+it|i\s+(?:asked|said|told\s+you))\b/i,
+  /\b(?:this|you|the\s+model)\s+(?:is|are|got|has\s+been)\s+(?:literally\s+|completely\s+)?(?:useless|broken|degraded|lobotomized|lobotomised|nerfed|dumber|stupid|worthless)\b/i,
+  /\bwhat[''']?s\s+wrong\s+with\s+you\b/i,
+  /\bwhy\s+are\s+you\s+(?:so\s+|being\s+so\s+)?(?:dumb|stupid|useless|broken|slow|incompetent)\b/i,
+  /\bare\s+you\s+(?:fucking\s+|literally\s+|even\s+)?(?:dumb|stupid|kidding|joking|listening|reading|an\s+idiot)\b/i,
+  /\byou\s+(?:used\s+to|previously)\s+(?:be\s+|could\s+)?(?:better|able|smart|capable)\b/i,
+  /\b(?:got\s+)?(?:downgraded|lobotomized|lobotomised|nerfed)\b/i,
+  /\byou(?:'?re|\s+are)\s+(?:literally\s+)?hallucinating\b/i,
+  /\bfor\s+the\s+(?:love\s+of\s+god|tenth\s+time|hundredth\s+time|millionth\s+time|last\s+time)\b/i,
+  /\bi\s+(?:already\s+)?(?:said|told\s+you|asked)\s+(?:this\s+)?(?:\d+|a\s+(?:few|couple)|multiple|many|too\s+many)\s+times\b/i,
+  /\bare\s+you\s+(?:even\s+)?reading\s+(?:what\s+i|my\s+(?:message|prompt|question))\b/i,
+  /\bdo\s+you\s+(?:even|actually)\s+understand\b/i,
+  /\bgive\s+up\b.{0,15}\b(?:on\s+you|trying)\b/i,
+
+  // Chinese — direct attack
+  /降智了吧?/,
+  /你(?:就|真|是)?(?:是个?|的是)?(?:垃圾|废物|傻[逼比子BX]|脑残|智障|蠢货|废柴)/,
+  /(?:去死|滚蛋|滚开|滚出去|爬|爬出去)/,
+  /(?:你)?(?:到底|tmd|TMD|他妈的?)(?:在(?:做|搞)什么|搞什么|是不是傻|懂不懂|怎么回事)/,
+  /你(?:真|越来越|怎么(?:这么|那么)?)(?:笨|蠢|傻|拉胯|不行|没用|废)/,
+  /(?:操你|你妈|草你|草泥马|c你|cnm|nmsl|你妈死了)/i,
+  /(?:脑子|脑壳|脑袋)(?:坏了|有病|进水|不行)/,
+  /(?:这个?\s*)?(?:模型|这玩意儿?|这个?\s*AI|这个?\s*助手)(?:降智|降级|完蛋|废了|崩了|坏了|不行了|拉了)/i,
+  /(?:老子|我)(?:都\s*)?(?:说|讲|告诉)(?:你)?了\s*(?:好\s*)?(?:多少|几|n|N|十几|很多)\s*(?:次|遍)/i,
+  /(?:你)?(?:能不能|到底)(?:听|看)(?:得)?懂(?:中文|人话|英文)/,
+  /你(?:在|tm|TM)?(?:故意|装)(?:傻|蠢|笨)/i,
+  /(?:答非所问|不知所云|胡说八道|胡言乱语|一派胡言)/,
+  /(?:废话|说废话|净说废话|尽说废话)/,
+  /(?:你)?(?:能不能|可不可以)(?:正常|认真)(?:回答|说话|思考)/,
+  /(?:怎么|为什么)(?:这么|那么|越来越)(?:笨|蠢|傻|拉胯|不行|没用|废|垃圾)/,
+  /(?:垃圾|废物|傻[逼比]|烂)\s*(?:模型|AI|助手|玩意儿?|东西)/i,
+  /(?:这个?|那个?)?\s*(?:模型|AI|助手|玩意儿?)\s*(?:真是?|实在|太|是|就是)\s*(?:垃圾|废物|烂|不行|拉胯|没用|废)/i,
+  /(?:老子|我)(?:都\s*)?(?:说|讲|告诉)(?:你)?了\s*(?:好\s*)?(?:多少|多|几|n|N|十几|很多)\s*(?:次|遍|回)/i,
+];
+
+function matchesHardTrigger(text: string): boolean {
+  for (const re of HARD_TRIGGER_PATTERNS) {
+    if (re.test(text)) return true;
+  }
+  return false;
+}
+
+// ── Positive-sentiment patterns ─────────────────────────────────────────
+//
+// When the user is in "ok cool, thanks" mode the model just helped them;
+// elevated history shouldn't suddenly trigger a switch. Damps final score.
+
+const POSITIVE_TRIGGER_PATTERNS: readonly RegExp[] = [
+  /\b(?:thanks?|thank\s+you|thx|ty)\b(?!\s+(?:for\s+nothing|a\s+lot\s+of\s+good))/i,
+  /\b(?:perfect|excellent|amazing|brilliant|wonderful|fantastic|great\s+job|good\s+job|nice\s+job|well\s+done)\b/i,
+  /\b(?:it\s+works|works\s+now|that\s+works|fixed\s+it|fixed\s+now|solved|sorted|figured\s+it\s+out)\b/i,
+  /\b(?:got\s+it|i\s+see|i\s+understand|makes\s+sense|that\s+makes\s+sense|understood)\b/i,
+  /\bexactly\b/i,
+  /\b(?:you'?re|you\s+are)\s+(?:right|correct|a\s+lifesaver|the\s+best)\b/i,
+  /\bmuch\s+better\b/i,
+  /\blooks\s+(?:good|great|right|correct)\b/i,
+
+  // Chinese
+  /(?:谢谢|感谢|多谢|3q|3Q|3ks)/i,
+  /(?:太棒了|太好了|完美|绝了|牛|nb|NB|niubility|niu)/i,
+  /(?:可以了|搞定了?|解决了|搞掂|搞定)/,
+  /(?:明白了|懂了|理解了|get到了?|学到了)/i,
+  /(?:不错|挺好|挺棒|挺不错|很好|很棒|很赞|很对)/,
+  /(?:对的?|正确|没问题|没毛病|没错)/,
+  /(?:你真聪明|你真厉害|你真棒|你真行)/,
+];
+
+function matchesPositive(text: string): boolean {
+  // Don't dampen if the message *also* contains frustration markers
+  // — "thanks for fucking nothing" should still register as negative.
+  for (const re of HARD_TRIGGER_PATTERNS) if (re.test(text)) return false;
+  if (/\b(?:fuck|shit|damn|wtf|stupid|broken|wrong|terrible|garbage)\b/i.test(text)) return false;
+  if (/(?:垃圾|废物|fuck|妈的|傻[逼比])/i.test(text)) return false;
+
+  for (const re of POSITIVE_TRIGGER_PATTERNS) {
+    if (re.test(text)) return true;
+  }
+  return false;
+}
 
 // ── Keyword dictionaries ──
 
@@ -86,10 +192,10 @@ const DEGRADATION_KEYWORDS = [
   'braindead', 'brain dead', 'smooth brain', 'regarded',
   'incompetent', 'incapable', 'clueless', 'helpless',
   'hallucinating', 'making things up', 'fabricated',
-  'confabulat', 'you\'re lying', 'that\'s not real',
+  'confabulat', "you're lying", "that's not real",
   // English — meta complaints
   'are you dumb', 'are you stupid', 'what happened to',
-  'you used to', 'what\'s wrong with you', 'get your act',
+  'you used to', "what's wrong with you", 'get your act',
   'do you even', 'can you not', 'how hard is it',
   // Chinese — direct
   '越来越笨', '变傻了', '不行了', '退化', '变蠢',
@@ -108,17 +214,17 @@ const DEGRADATION_KEYWORDS = [
 // Imperatives and mid-level frustration
 const IMPERATIVE_KEYWORDS = [
   // English
-  'stop', "don't", 'wrong', 'incorrect', 'no',
-  'fix this', 'fix it', 'bad', 'terrible',
+  'stop', "don't", 'wrong', 'incorrect',
+  'fix this', 'fix it', 'bad',
   'listen', 'are you listening', 'read my', 'pay attention',
-  'again', 'still wrong', 'not working', 'doesn\'t work',
+  'again', 'still wrong', 'not working', "doesn't work",
   'for the last time', 'I already told you', 'how many times',
   'I said', 'as I said', 'like I said', 'I just said',
   'seriously', 'unbelievable', 'unacceptable', 'are you kidding',
   'what a joke', 'give me a break', 'come on',
   're-read', 'reread', 'look again', 'try again',
-  'not what I asked', 'that\'s not what', 'I didn\'t ask',
-  'you\'re not helping', 'this is pointless', 'waste of time',
+  'not what I asked', "that's not what", "I didn't ask",
+  "you're not helping", 'this is pointless', 'waste of time',
   'same error', 'same mistake', 'still broken', 'still not',
   'why do you keep', 'stop refusing', 'just do it',
   // Chinese
@@ -178,7 +284,7 @@ const APOLOGY_KEYWORDS = [
   // English
   'i apologize', 'sorry about that', 'my mistake', 'my apologies',
   'i was wrong', 'let me correct', 'apologize for the confusion',
-  'i\'m sorry', 'sorry for the', 'apologies for',
+  "i'm sorry", 'sorry for the', 'apologies for',
   'i made an error', 'that was my fault', 'i messed up',
   'let me try again', 'let me redo', 'let me fix that',
   'i appreciate your patience', 'thank you for your patience',
@@ -206,10 +312,10 @@ const LAZINESS_KEYWORDS = [
   '<your_', '<insert_', '<add_', 'your_function_here',
   '// todo:', '# todo:', '// fixme:', '# fixme:',
   // Lazy explanations instead of code
-  'i\'ll provide a high-level', 'here\'s a high-level',
-  'here\'s a general outline', 'here is a general outline',
-  'i\'ll provide an outline', 'here\'s a skeleton',
-  'i won\'t write out the full', 'i will not write out',
+  "i'll provide a high-level", "here's a high-level",
+  "here's a general outline", 'here is a general outline',
+  "i'll provide an outline", "here's a skeleton",
+  "i won't write out the full", 'i will not write out',
   'you can implement', 'you would implement',
   'left as an exercise', 'beyond the scope of',
   // Chinese
@@ -307,6 +413,30 @@ const NEGATE_WORDS = new Set([
 
 // ── Scoring helpers ──
 
+const CJK_RANGE_TEST = /[㐀-䶿一-鿿豈-﫿]/;
+
+/** Pure-ASCII short token? Apply word boundaries to dodge substring false-positives. */
+function shouldUseWordBoundary(keyword: string): boolean {
+  if (CJK_RANGE_TEST.test(keyword)) return false;
+  if (/\s/.test(keyword)) return false; // multi-word phrases already have context
+  if (keyword.length > 8) return false; // long words rarely false-match
+  return /^[a-z']+$/i.test(keyword);
+}
+
+const _kwRegexCache = new Map<string, RegExp>();
+function keywordHitsText(text: string, keyword: string): boolean {
+  if (shouldUseWordBoundary(keyword)) {
+    let re = _kwRegexCache.get(keyword);
+    if (!re) {
+      const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, "['']");
+      re = new RegExp(`\\b${escaped}\\b`, 'i');
+      _kwRegexCache.set(keyword, re);
+    }
+    return re.test(text);
+  }
+  return text.toLowerCase().includes(keyword.toLowerCase());
+}
+
 /**
  * Tokenize text into words, preserving original case for cap detection.
  * Splits on whitespace and punctuation, but keeps the words themselves intact.
@@ -323,18 +453,19 @@ function tokenizeWords(text: string): string[] {
  * - Negation words (e.g., "not", "不") flip or dampen following keyword
  * - ALL-CAPS keyword gets C_INCR boost
  * - Repeated punctuation ("!!!" or "???") adds emphasis
+ *
+ * v0.4: ASCII keywords matched with word boundaries; CJK and multi-word
+ * keywords still substring-matched.
  */
 function keywordScore(text: string, keywords: readonly string[]): number {
-  const lower = text.toLowerCase();
   const words = tokenizeWords(text);
   const lowerWords = words.map((w) => w.toLowerCase());
 
-  // Count base hits (substring match for multi-word keywords)
   let totalValence = 0;
   let hits = 0;
 
   for (const kw of keywords) {
-    if (!lower.includes(kw)) continue;
+    if (!keywordHitsText(text, kw)) continue;
     hits++;
 
     let valence = 1.0;
@@ -356,15 +487,12 @@ function keywordScore(text: string, keywords: readonly string[]): number {
         // Negation flips/dampens (VADER N_SCALAR)
         if (NEGATE_WORDS.has(prev)) {
           valence *= N_SCALAR;
-          break; // negation found, stop scanning
+          break;
         }
-        // Booster amplifies (decays with distance)
         const boost = BOOSTER_WORDS[prev];
         if (boost !== undefined) {
-          // Apply with distance decay (farther = less effect)
           const decay = 1 - (i - 1) * 0.05;
           valence += boost * decay;
-          // Boost itself in caps gets extra
           const origPrev = words[idx - i]!;
           if (origPrev === origPrev.toUpperCase() && origPrev.length >= 3) {
             valence += C_INCR * 0.5;
@@ -380,36 +508,32 @@ function keywordScore(text: string, keywords: readonly string[]): number {
       valence += Math.min(0.292, totalExclaim * 0.292 * 0.25);
     }
 
-    // Clamp negative valence to 0 (negated frustration becomes neutral, not anti-frustration)
     totalValence += Math.max(0, valence);
   }
 
   if (hits === 0) return 0;
 
-  // Average valence × hits/5 cap, then clamp
+  // Average valence × hits/3 cap (was /5 — too lenient), clamped
   const avgValence = totalValence / hits;
-  const baseScore = Math.min(1.0, hits / 5);
+  const baseScore = Math.min(1.0, hits / 3);
   return Math.min(1.0, baseScore * avgValence);
 }
 
 function capsRatioScore(text: string): number {
   const letters = text.replace(/[^a-zA-Z]/g, '');
-  if (letters.length < 8) return 0; // Need minimum length to judge
+  if (letters.length < 8) return 0;
   const uppers = letters.replace(/[^A-Z]/g, '');
   const ratio = uppers.length / letters.length;
-  // Shouting threshold: > 50% caps
   return ratio > 0.5 ? Math.min(1.0, (ratio - 0.5) * 2) : 0;
 }
 
 function brevityScore(messages: string[], currentIndex: number): number {
   const current = messages[currentIndex] ?? '';
-  // Very short message after longer context
   if (current.length > 15) return 0;
 
-  // Check if previous messages were significantly longer (user was engaged, now terse)
   const prev = messages.slice(Math.max(0, currentIndex - 3), currentIndex);
   const avgPrev = prev.reduce((s, m) => s + m.length, 0) / (prev.length || 1);
-  if (avgPrev < 50) return 0; // Context wasn't long enough to judge
+  if (avgPrev < 50) return 0;
 
   return Math.min(1.0, (15 - current.length) / 15);
 }
@@ -417,7 +541,6 @@ function brevityScore(messages: string[], currentIndex: number): number {
 function repetitionScore(messages: string[]): number {
   if (messages.length < 3) return 0;
 
-  // Look for highly similar adjacent user messages
   let maxConsecutive = 0;
   let currentRun = 0;
 
@@ -431,15 +554,10 @@ function repetitionScore(messages: string[]): number {
     }
   }
 
-  // 2+ repeats (3+ of same thing) → score starts ramping
   if (maxConsecutive < 2) return 0;
   return Math.min(1.0, (maxConsecutive - 1) / 3);
 }
 
-/**
- * Jaccard similarity with CJK-aware tokenization.
- * For CJK text, uses character bigrams instead of whitespace splitting.
- */
 function jaccardSimilarity(a: string, b: string): number {
   const aTokens = tokenize(a.toLowerCase());
   const bTokens = tokenize(b.toLowerCase());
@@ -448,25 +566,21 @@ function jaccardSimilarity(a: string, b: string): number {
   return union === 0 ? 0 : intersection / union;
 }
 
-const CJK_RANGE = /[一-鿿㐀-䶿豈-﫿]/;
+const CJK_RANGE = /[一-鿿㐀-䶿豈-﫿]/;
 
 function tokenize(text: string): Set<string> {
   const tokens = new Set<string>();
-  // Split on whitespace for Latin words
   const words = text.split(/\s+/).filter(Boolean);
   for (const w of words) {
     if (CJK_RANGE.test(w)) {
-      // CJK word: emit character bigrams
       for (let i = 0; i < w.length - 1; i++) {
         tokens.add(w[i]! + w[i + 1]!);
       }
-      // Also emit single chars for very short words
       if (w.length === 1) tokens.add(w);
     } else {
       tokens.add(w);
     }
   }
-  // Also scan raw text for CJK bigrams that may not be whitespace-separated
   for (let i = 0; i < text.length - 1; i++) {
     if (CJK_RANGE.test(text[i]!) && CJK_RANGE.test(text[i + 1]!)) {
       tokens.add(text[i]! + text[i + 1]!);
@@ -477,10 +591,6 @@ function tokenize(text: string): Set<string> {
 
 // ── Multi-message analysis ──
 
-/**
- * Analyze the last N user messages for accumulated frustration signals.
- * Returns a score based on keyword density across recent messages.
- */
 function multiMessageScore(messages: string[], keywords: readonly string[], window: number = 3): number {
   if (messages.length === 0) return 0;
   const recent = messages.slice(-window);
@@ -488,10 +598,6 @@ function multiMessageScore(messages: string[], keywords: readonly string[], wind
   return keywordScore(combined, keywords);
 }
 
-/**
- * Detect escalation pattern: user getting progressively more frustrated.
- * Compares sentiment density of recent messages vs earlier ones.
- */
 function escalationScore(messages: string[]): number {
   if (messages.length < 4) return 0;
 
@@ -500,21 +606,17 @@ function escalationScore(messages: string[]): number {
   const recent = messages.slice(halfIdx).join(' ');
 
   const allKw = [...PROFANITY_KEYWORDS, ...DEGRADATION_KEYWORDS, ...IMPERATIVE_KEYWORDS];
-  const lowerEarlier = earlier.toLowerCase();
-  const lowerRecent = recent.toLowerCase();
 
   let earlierHits = 0;
   let recentHits = 0;
   for (const kw of allKw) {
-    if (lowerEarlier.includes(kw)) earlierHits++;
-    if (lowerRecent.includes(kw)) recentHits++;
+    if (keywordHitsText(earlier, kw)) earlierHits++;
+    if (keywordHitsText(recent, kw)) recentHits++;
   }
 
-  // Normalize by length
   const earlierDensity = earlier.length > 0 ? earlierHits / (earlier.length / 100) : 0;
   const recentDensity = recent.length > 0 ? recentHits / (recent.length / 100) : 0;
 
-  // Significant increase in frustration density
   if (recentDensity > earlierDensity * 2 && recentHits >= 2) {
     return Math.min(1.0, (recentDensity - earlierDensity) * 2);
   }
@@ -523,25 +625,13 @@ function escalationScore(messages: string[]): number {
 
 // ── AI Response analysis ──
 
-/**
- * Detect self-repetition within a single AI response.
- *
- * Inspired by SelfCheckGPT's self-consistency framework (Manakul et al., EMNLP-23):
- * degraded models tend to loop on the same n-grams. Unlike SelfCheckGPT which
- * samples N responses (high latency), this works on a SINGLE response by finding
- * repeated 6-grams within the response itself.
- *
- * Reference: https://github.com/potsawee/selfcheckgpt
- */
 function selfRepetitionScore(text: string): number {
-  if (text.length < 200) return 0; // need enough content to judge
+  if (text.length < 200) return 0;
 
-  // Strip code blocks and inline code (legitimate repetition there)
   const stripped = text
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`[^`]+`/g, ' ');
 
-  // Tokenize into words
   const words = stripped
     .toLowerCase()
     .split(/[\s,.;:!?()\[\]{}'"`\n]+/)
@@ -549,7 +639,6 @@ function selfRepetitionScore(text: string): number {
 
   if (words.length < 50) return 0;
 
-  // Build 6-gram histogram
   const ngramSize = 6;
   const ngrams = new Map<string, number>();
   for (let i = 0; i <= words.length - ngramSize; i++) {
@@ -557,7 +646,6 @@ function selfRepetitionScore(text: string): number {
     ngrams.set(gram, (ngrams.get(gram) ?? 0) + 1);
   }
 
-  // Count n-grams that repeat 2+ times
   let repeatedGrams = 0;
   let maxCount = 0;
   for (const count of ngrams.values()) {
@@ -567,12 +655,9 @@ function selfRepetitionScore(text: string): number {
     }
   }
 
-  // Score: weight by both unique repeated grams and max repetition count
-  // Normalize against total possible n-grams
   const totalGrams = words.length - ngramSize + 1;
   const repeatRatio = repeatedGrams / totalGrams;
 
-  // Significant if >2% of n-grams repeat OR any 6-gram appears 3+ times
   if (repeatRatio < 0.02 && maxCount < 3) return 0;
 
   return Math.min(1.0, repeatRatio * 10 + (maxCount - 2) * 0.2);
@@ -588,9 +673,6 @@ export interface AIResponseSignals {
   selfRepetition: number;
 }
 
-/**
- * Extract assistant messages from conversation history.
- */
 export function extractAssistantMessages(
   messages: Array<{ role: string; content: string | unknown }>,
 ): string[] {
@@ -609,9 +691,6 @@ export function extractAssistantMessages(
   return result;
 }
 
-/**
- * Analyze an AI response for degradation signals.
- */
 export function analyzeAIResponse(
   responseText: string,
   avgResponseLength: number = 0,
@@ -630,11 +709,9 @@ export function analyzeAIResponse(
   const disclaimer = keywordScore(responseText, DISCLAIMER_KEYWORDS);
   const selfRepetition = selfRepetitionScore(responseText);
 
-  // Length anomaly: compare to rolling average
   let lengthScore = 0;
   if (avgResponseLength > 100) {
     const ratio = responseText.length / avgResponseLength;
-    // If response is less than 40% of average length, flag it
     if (ratio < 0.4) {
       lengthScore = Math.min(1.0, (0.4 - ratio) * 2.5);
     }
@@ -647,6 +724,10 @@ export function analyzeAIResponse(
 
 export interface AnalysisResult {
   score: number;
+  /** True if a hard-trigger phrase fired (score=0.95 regardless of other signals). */
+  hardTriggered: boolean;
+  /** True if a positive-sentiment phrase was detected, halving the final score. */
+  positiveDampened: boolean;
   signals: {
     profanity: number;
     degradation: number;
@@ -672,23 +753,26 @@ export function analyzeSentiment(
   weights: SentimentSignalWeights = DEFAULT_WEIGHTS,
   aiSignals?: AIResponseSignals,
 ): AnalysisResult {
+  const emptySignals = {
+    profanity: 0, degradation: 0, imperatives: 0, caps: 0,
+    brevity: 0, repetition: 0, escalation: 0,
+    multiProfanity: 0, multiDegradation: 0,
+    aiRefusal: 0, aiHedging: 0, aiApology: 0, aiLengthDrop: 0,
+    aiLaziness: 0, aiDisclaimer: 0, aiSelfRepetition: 0,
+  };
+
   if (!userMessages.length) {
-    return {
-      score: 0,
-      signals: {
-        profanity: 0, degradation: 0, imperatives: 0, caps: 0,
-        brevity: 0, repetition: 0, escalation: 0,
-        multiProfanity: 0, multiDegradation: 0,
-        aiRefusal: 0, aiHedging: 0, aiApology: 0, aiLengthDrop: 0,
-        aiLaziness: 0, aiDisclaimer: 0, aiSelfRepetition: 0,
-      },
-    };
+    return { score: 0, hardTriggered: false, positiveDampened: false, signals: emptySignals };
   }
 
   const lastIdx = userMessages.length - 1;
   const lastMsg = userMessages[lastIdx]!;
 
-  // Single-message signals
+  // Stage 1: Hard-trigger override — single high-confidence phrase pins to 0.95.
+  // We still compute downstream signals so callers (logs, dashboard) see them.
+  const hardTriggered = matchesHardTrigger(lastMsg);
+
+  // Stage 2: Per-signal scoring (single-message)
   const signals = {
     profanity: keywordScore(lastMsg, PROFANITY_KEYWORDS),
     degradation: keywordScore(lastMsg, DEGRADATION_KEYWORDS),
@@ -696,11 +780,9 @@ export function analyzeSentiment(
     caps: capsRatioScore(lastMsg),
     brevity: brevityScore(userMessages, lastIdx),
     repetition: repetitionScore(userMessages),
-    // Multi-message signals (look at last 3 messages)
     escalation: escalationScore(userMessages),
     multiProfanity: multiMessageScore(userMessages, PROFANITY_KEYWORDS, 3),
     multiDegradation: multiMessageScore(userMessages, DEGRADATION_KEYWORDS, 3),
-    // AI response signals
     aiRefusal: aiSignals?.refusal ?? 0,
     aiHedging: aiSignals?.hedging ?? 0,
     aiApology: aiSignals?.apology ?? 0,
@@ -710,36 +792,80 @@ export function analyzeSentiment(
     aiSelfRepetition: aiSignals?.selfRepetition ?? 0,
   };
 
-  // Weighted average normalized to 0-1
-  const totalWeight =
-    weights.profanity + weights.degradation + weights.imperatives +
-    weights.caps + weights.brevity + weights.repetition +
-    weights.aiRefusal + weights.aiHedging + weights.aiApology + weights.aiLengthDrop +
-    weights.aiLaziness + weights.aiDisclaimer + weights.aiSelfRepetition;
+  if (hardTriggered) {
+    return {
+      score: HARD_TRIGGER_SCORE,
+      hardTriggered: true,
+      positiveDampened: false,
+      signals,
+    };
+  }
 
-  if (totalWeight === 0) return { score: 0, signals };
+  // Stage 3: Decisive aggregation
+  // - High-confidence signals (profanity, degradation) aggregate as MAX (not sum/avg)
+  //   — one strong signal alone is enough.
+  // - Noisy signals (imperatives, caps, brevity, repetition, escalation, AI signals)
+  //   aggregate as weighted average so a sole match doesn't false-fire.
+  // - Compound bonus when ≥2 categories fire — multiple kinds of evidence.
 
-  // Take the max of single-message and multi-message for profanity/degradation
   const effectiveProfanity = Math.max(signals.profanity, signals.multiProfanity * 0.8);
   const effectiveDegradation = Math.max(signals.degradation, signals.multiDegradation * 0.8);
 
-  const score =
-    (effectiveProfanity * weights.profanity +
-     effectiveDegradation * weights.degradation +
-     signals.imperatives * weights.imperatives +
-     signals.caps * weights.caps +
-     signals.brevity * weights.brevity +
-     signals.repetition * weights.repetition +
-     signals.escalation * 0.5 +
-     signals.aiRefusal * weights.aiRefusal +
-     signals.aiHedging * weights.aiHedging +
-     signals.aiApology * weights.aiApology +
-     signals.aiLengthDrop * weights.aiLengthDrop +
-     signals.aiLaziness * weights.aiLaziness +
-     signals.aiDisclaimer * weights.aiDisclaimer +
-     signals.aiSelfRepetition * weights.aiSelfRepetition) / (totalWeight + 0.5);
+  // High-confidence path: scaled by their declared weights so users can still tune.
+  const profComponent = effectiveProfanity * weights.profanity;
+  const degComponent = effectiveDegradation * weights.degradation;
+  const decisive = Math.max(profComponent, degComponent);
 
-  return { score: Math.min(1.0, score), signals };
+  // Noisy path: weighted average of remaining signals
+  const noisyComponents: Array<[number, number]> = [
+    [signals.imperatives, weights.imperatives],
+    [signals.caps, weights.caps],
+    [signals.brevity, weights.brevity],
+    [signals.repetition, weights.repetition],
+    [Math.min(1, signals.escalation), 0.5],
+    [signals.aiRefusal, weights.aiRefusal],
+    [signals.aiHedging, weights.aiHedging],
+    [signals.aiApology, weights.aiApology],
+    [signals.aiLengthDrop, weights.aiLengthDrop],
+    [signals.aiLaziness, weights.aiLaziness],
+    [signals.aiDisclaimer, weights.aiDisclaimer],
+    [signals.aiSelfRepetition, weights.aiSelfRepetition],
+  ];
+
+  let noisyNum = 0;
+  let noisyDen = 0;
+  for (const [val, w] of noisyComponents) {
+    if (val > 0) {
+      noisyNum += val * w;
+      noisyDen += w;
+    }
+  }
+  const noisyAvg = noisyDen > 0 ? noisyNum / noisyDen : 0;
+
+  // Compound bonus: multiple categories fire = stronger evidence than any single
+  let activeCategories = 0;
+  if (effectiveProfanity > 0.1) activeCategories++;
+  if (effectiveDegradation > 0.1) activeCategories++;
+  if (signals.imperatives > 0.1) activeCategories++;
+  if (signals.repetition > 0.2) activeCategories++;
+  if (signals.escalation > 0.1) activeCategories++;
+  if (signals.aiRefusal > 0.1 || signals.aiLaziness > 0.2) activeCategories++;
+  const compoundBonus = activeCategories >= 3 ? 0.2 : activeCategories >= 2 ? 0.1 : 0;
+
+  let score = Math.max(decisive, noisyAvg) + compoundBonus;
+
+  // Stage 4: Positive-sentiment dampening
+  const positiveDampened = matchesPositive(lastMsg);
+  if (positiveDampened) {
+    score *= 0.5;
+  }
+
+  return {
+    score: Math.min(1, Math.max(0, score)),
+    hardTriggered: false,
+    positiveDampened,
+    signals,
+  };
 }
 
 export function extractUserMessages(
