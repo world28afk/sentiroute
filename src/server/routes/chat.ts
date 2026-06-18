@@ -1,59 +1,21 @@
-import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import type { FastifyPluginAsync } from 'fastify';
 import { Readable } from 'node:stream';
 import type { Config, SentimentConfig } from '../../config/schema.js';
 import { resolveSlot } from '../../proxy/router.js';
-import { executeUpstream } from '../../proxy/executor.js';
 import { getRequestLogger } from '../middleware/logging.js';
 import { getTranslator } from '../../translation/registry.js';
 import { SentimentState } from '../../sentiment/state.js';
 import { analyzeSentiment, extractUserMessages, analyzeAIResponse, DEFAULT_WEIGHTS } from '../../sentiment/signals.js';
 import { applySentimentSwitch } from '../../sentiment/switch.js';
-
-// Extract text content from a response body (Anthropic or OpenAI format)
-function extractResponseText(body: unknown): string {
-  if (!body || typeof body !== 'object') return '';
-  const obj = body as Record<string, unknown>;
-
-  // Anthropic format: { content: [{ type: 'text', text: '...' }] }
-  if (Array.isArray(obj.content)) {
-    return (obj.content as Array<{ type?: string; text?: string }>)
-      .filter((b) => b.type === 'text' && b.text)
-      .map((b) => b.text!)
-      .join('\n');
-  }
-
-  // OpenAI format: { choices: [{ message: { content: '...' } }] }
-  if (Array.isArray(obj.choices)) {
-    const choice = (obj.choices as Array<{ message?: { content?: string } }>)[0];
-    return choice?.message?.content ?? '';
-  }
-
-  return '';
-}
-
-function buildUpstreamUrl(endpoint: string, incomingUrl: string): string {
-  const base = endpoint.replace(/\/+$/, '');
-  const url = new URL(incomingUrl, 'http://localhost');
-  const pathAndQuery = url.pathname + url.search;
-  if (base.endsWith('/v1') && pathAndQuery.startsWith('/v1/')) {
-    return base + pathAndQuery.slice(3);
-  }
-  return base + pathAndQuery;
-}
-
-function passthroughHeaders(req: FastifyRequest): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(req.headers)) {
-    if (v !== undefined) {
-      out[k] = Array.isArray(v) ? v.join(', ') : v;
-    }
-  }
-  return out;
-}
-
-function now(): string {
-  return new Date().toISOString();
-}
+import { extractResponseText } from '../../refusal/extract.js';
+import { createRefusalRelay } from '../../refusal/relay.js';
+import {
+  buildUpstreamUrl,
+  executeWithRelayNonStream,
+  executeWithRelayStream,
+  nowIso,
+  passthroughHeaders,
+} from './helpers.js';
 
 type RouteOpts = { config: Config; dataDir: string; sentimentState: SentimentState };
 
@@ -70,7 +32,7 @@ const chatPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
     try {
       slot = resolveSlot(opts.config, modelId);
     } catch {
-      const msg = `${now()}  POST /v1/chat/completions  ${modelId}  ?  -`;
+      const msg = `${nowIso()}  POST /v1/chat/completions  ${modelId}  ?  -`;
       console.log(msg);
       return reply.code(400).send({
         error: { type: 'invalid_request_error', message: `Unknown model: ${modelId}` },
@@ -98,56 +60,72 @@ const chatPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
 
     if (switchResult.switched) {
       slot = resolveSlot(opts.config, modelId, switchResult.upstreamIndex);
-      console.log(`${now()}  SWITCH  ${slot.slotId}  ${switchResult.reason}`);
+      console.log(`${nowIso()}  SWITCH  ${slot.slotId}  ${switchResult.reason}`);
     }
 
     const translator = getTranslator('openai', slot.format);
-
-    let upstreamBody: string;
-    if (translator) {
-      upstreamBody = JSON.stringify(translator.translateRequest(body, slot.upstreamModel));
-    } else {
-      upstreamBody = JSON.stringify({ ...body, model: slot.upstreamModel });
-    }
-
     const url = buildUpstreamUrl(slot.endpoint, request.raw.url ?? '/v1/chat/completions');
+    const headers = passthroughHeaders(request);
 
-    const result = await executeUpstream({
+    // ── Refusal relay ──
+    const relay = createRefusalRelay(opts.config.refusalRelay);
+    const useRelayForStream = relay.enabled && relay.applyToStreaming;
+
+    const relayCtx = {
+      relay,
+      clientBody: body,
+      clientFormat: 'openai' as const,
+      translator,
+      slot,
       url,
-      body: upstreamBody,
-      apiKey: slot.apiKey,
-      format: slot.format,
-      timeoutMs: slot.timeoutMs,
-      headers: passthroughHeaders(request),
-    });
+      headers,
+    };
 
-    const latencyMs = Date.now() - start;
-    const status = result.kind === 'error' ? result.statusCode : 200;
-    console.log(`${now()}  POST /v1/chat/completions  ${slot.slotId}  ${slot.upstreamName}  ${status}  ${latencyMs}ms`);
+    // ── Non-streaming path ──
+    if (!isStream) {
+      const outcome = await executeWithRelayNonStream(relayCtx);
+      const latencyMs = Date.now() - start;
+      const status = outcome.result.kind === 'error' ? outcome.result.statusCode : 200;
+      const relayTag = outcome.refused ? `  RELAY(${outcome.retries}${outcome.synthesized ? '+fake' : ''})` : '';
+      console.log(
+        `${nowIso()}  POST /v1/chat/completions  ${slot.slotId}  ${slot.upstreamName}  ${status}  ${latencyMs}ms${relayTag}`,
+      );
 
-    fileLog.info({
-      path: '/v1/chat/completions',
-      model: slot.slotId,
-      upstream: slot.upstreamName,
-      status,
-      latency: latencyMs,
-      stream: isStream,
-      sentimentScore: slotState.score,
-    });
+      fileLog.info({
+        path: '/v1/chat/completions',
+        model: slot.slotId,
+        upstream: slot.upstreamName,
+        status,
+        latency: latencyMs,
+        stream: false,
+        sentimentScore: slotState.score,
+        relayRefused: outcome.refused,
+        relayRetries: outcome.retries,
+        relaySynthesized: outcome.synthesized,
+      });
 
-    if (result.kind === 'error') {
-      reply.code(result.statusCode).type('application/json').send(result.body);
-      return;
-    }
+      if (outcome.result.kind === 'error') {
+        reply.code(outcome.result.statusCode).type('application/json').send(outcome.result.body);
+        return;
+      }
+      if (outcome.result.kind === 'streaming') {
+        reply.code(502).type('application/json').send({ error: 'Unexpected upstream streaming response' });
+        return;
+      }
 
-    const scoreStr = slotState.score.toFixed(2);
+      const completeBody = outcome.result.body;
 
-    if (result.kind === 'complete') {
-      const responseBody = translator
-        ? translator.translateResponse(result.body, slot.upstreamModel)
-        : result.body;
+      const responseBodyStr =
+        translator && !outcome.synthesized
+          ? translator.translateResponse(completeBody, slot.upstreamModel)
+          : completeBody;
 
-      // Post-hoc AI response analysis (no latency impact on response)
+      let responseBody: unknown = responseBodyStr;
+      try {
+        responseBody = JSON.parse(responseBodyStr);
+      } catch {
+        /* leave as string */
+      }
       const responseText = extractResponseText(responseBody);
       const aiSignals = analyzeAIResponse(responseText, slotState.aiMetrics.avgResponseLength);
       if (responseText.length > 0) {
@@ -156,11 +134,100 @@ const chatPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
 
       reply
         .header('X-SentiRoute-Upstream', slot.slotId)
-        .header('X-SentiRoute-Score', scoreStr)
-        .send(responseBody);
+        .header('X-SentiRoute-Score', slotState.score.toFixed(2))
+        .header('X-SentiRoute-Relay', outcome.refused ? `retries=${outcome.retries}` : 'none')
+        .type('application/json')
+        .send(responseBodyStr);
       return;
     }
 
+    // ── Streaming path ──
+    if (useRelayForStream) {
+      const streamOutcome = await executeWithRelayStream(relayCtx);
+      const latencyMs = Date.now() - start;
+      const status = streamOutcome.errorResult ? streamOutcome.errorResult.statusCode : 200;
+      const relayTag = streamOutcome.refused
+        ? `  RELAY(${streamOutcome.retries}${streamOutcome.synthesized ? '+fake' : ''})`
+        : '';
+      console.log(
+        `${nowIso()}  POST /v1/chat/completions  ${slot.slotId}  ${slot.upstreamName}  ${status}  ${latencyMs}ms  STREAM${relayTag}`,
+      );
+
+      fileLog.info({
+        path: '/v1/chat/completions',
+        model: slot.slotId,
+        upstream: slot.upstreamName,
+        status,
+        latency: latencyMs,
+        stream: true,
+        sentimentScore: slotState.score,
+        relayRefused: streamOutcome.refused,
+        relayRetries: streamOutcome.retries,
+        relaySynthesized: streamOutcome.synthesized,
+      });
+
+      if (streamOutcome.errorResult) {
+        reply.code(streamOutcome.errorResult.statusCode).type('application/json').send(streamOutcome.errorResult.body);
+        return;
+      }
+
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-SentiRoute-Upstream': slot.slotId,
+        'X-SentiRoute-Score': slotState.score.toFixed(2),
+        'X-SentiRoute-Relay': streamOutcome.refused ? `retries=${streamOutcome.retries}` : 'none',
+      });
+      reply.hijack();
+      reply.raw.write(streamOutcome.sseBuffer);
+      reply.raw.end();
+
+      if (streamOutcome.sseBuffer.length > 0) {
+        const aiSignals = analyzeAIResponse(streamOutcome.sseBuffer, slotState.aiMetrics.avgResponseLength);
+        opts.sentimentState.updateAISignals(slot.slotId, aiSignals, streamOutcome.sseBuffer.length, sentimentCfg).catch(() => {});
+      }
+      return;
+    }
+
+    // ── Streaming path WITHOUT refusal relay (true streaming) ──
+    const upstreamBody = translator
+      ? JSON.stringify(translator.translateRequest(body, slot.upstreamModel))
+      : JSON.stringify({ ...body, model: slot.upstreamModel });
+
+    const result = await (await import('../../proxy/executor.js')).executeUpstream({
+      url,
+      body: upstreamBody,
+      apiKey: slot.apiKey,
+      format: slot.format,
+      timeoutMs: slot.timeoutMs,
+      headers,
+    });
+
+    const latencyMs = Date.now() - start;
+    const status = result.kind === 'error' ? result.statusCode : 200;
+    console.log(`${nowIso()}  POST /v1/chat/completions  ${slot.slotId}  ${slot.upstreamName}  ${status}  ${latencyMs}ms  STREAM`);
+
+    fileLog.info({
+      path: '/v1/chat/completions',
+      model: slot.slotId,
+      upstream: slot.upstreamName,
+      status,
+      latency: latencyMs,
+      stream: true,
+      sentimentScore: slotState.score,
+    });
+
+    if (result.kind === 'error') {
+      reply.code(result.statusCode).type('application/json').send(result.body);
+      return;
+    }
+    if (result.kind === 'complete') {
+      reply.type('application/json').send(result.body);
+      return;
+    }
+
+    const scoreStr = slotState.score.toFixed(2);
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -175,7 +242,6 @@ const chatPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
       : (result.stream as any);
     const nodeStream = Readable.fromWeb(rawStream);
 
-    // Accumulate streamed content for post-hoc AI response analysis
     let streamedText = '';
     const origWrite = reply.raw.write.bind(reply.raw);
     (reply.raw as any).write = function(chunk: any, ...args: any[]) {
@@ -191,7 +257,6 @@ const chatPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
 
     request.raw.on('close', () => {
       nodeStream.destroy();
-      // Post-hoc analysis after stream ends
       if (streamedText.length > 0) {
         const aiSignals = analyzeAIResponse(streamedText, slotState.aiMetrics.avgResponseLength);
         opts.sentimentState.updateAISignals(slot.slotId, aiSignals, streamedText.length, sentimentCfg).catch(() => {});

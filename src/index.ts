@@ -22,6 +22,25 @@ function createDefaultConfig(): Config {
         profanity: 0.8, degradation: 0.9, imperatives: 0.4,
         caps: 0.3, brevity: 0.2, repetition: 0.6,
       },
+      aiAnalyzer: {
+        enabled: false,
+        // endpoint: 'https://api.openai.com/v1',
+        // api_key: 'sk-...',
+        model: 'gpt-4o-mini',
+        format: 'openai',
+        timeoutMs: 8000,
+        triggerScore: 0.3,
+        cacheTtlMs: 60_000,
+        weight: 0.6,
+        maxTurns: 6,
+      },
+    },
+    refusalRelay: {
+      enabled: false,
+      maxRetries: 3,
+      continueMessage: '继续',
+      failureMode: 'fake_success',
+      applyToStreaming: true,
     },
     model_slots: {
       'claude-opus-4.7': {
