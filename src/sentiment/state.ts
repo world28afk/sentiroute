@@ -255,4 +255,29 @@ export class SentimentState {
   flush(): void {
     // conf writes synchronously, but this is a no-op safety hook
   }
+
+  /**
+   * Blend an AI-analyzer verdict into the current slot score.
+   * Called fire-and-forget after each request — the new score affects the NEXT switching decision.
+   */
+  async applyAIVerdict(
+    slotId: string,
+    aiScore: number,
+    blendWeight: number,
+  ): Promise<SlotSentimentState> {
+    return this.queue.enqueue(async () => {
+      const slots = this.store.get('slots');
+      const current = slots[slotId] ?? defaultSlotState(slotId);
+      const w = Math.max(0, Math.min(1, blendWeight));
+      const blended = Math.min(1, Math.max(0, current.score * (1 - w) + aiScore * w));
+
+      const updated: SlotSentimentState = {
+        ...current,
+        score: blended,
+        lastUpdated: Date.now(),
+      };
+      this.store.set('slots', { ...slots, [slotId]: updated });
+      return updated;
+    });
+  }
 }

@@ -1,11 +1,12 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { Readable } from 'node:stream';
 import type { Config, SentimentConfig } from '../../config/schema.js';
-import { resolveSlot } from '../../proxy/router.js';
+import { resolveSlot, type ResolvedSlot } from '../../proxy/router.js';
 import { getRequestLogger } from '../middleware/logging.js';
 import { getTranslator } from '../../translation/registry.js';
 import { SentimentState } from '../../sentiment/state.js';
-import { analyzeSentiment, extractUserMessages, analyzeAIResponse, DEFAULT_WEIGHTS } from '../../sentiment/signals.js';
+import type { AIAnalyzer } from '../../sentiment/ai-analyzer.js';
+import { analyzeSentiment, extractUserMessages, extractAssistantMessages, analyzeAIResponse, DEFAULT_WEIGHTS } from '../../sentiment/signals.js';
 import { applySentimentSwitch } from '../../sentiment/switch.js';
 import { extractResponseText } from '../../refusal/extract.js';
 import { createRefusalRelay } from '../../refusal/relay.js';
@@ -17,7 +18,7 @@ import {
   passthroughHeaders,
 } from './helpers.js';
 
-type RouteOpts = { config: Config; dataDir: string; sentimentState: SentimentState };
+type RouteOpts = { config: Config; dataDir: string; sentimentState: SentimentState; aiAnalyzer: AIAnalyzer };
 
 const messagesPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
   const fileLog = getRequestLogger(opts.dataDir);
@@ -28,7 +29,7 @@ const messagesPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
     const modelId = body.model as string;
     const isStream = body.stream === true;
 
-    let slot;
+    let slot: ResolvedSlot;
     try {
       slot = resolveSlot(opts.config, modelId);
     } catch {
@@ -46,9 +47,36 @@ const messagesPlugin: FastifyPluginAsync<RouteOpts> = async (fastify, opts) => {
     const weights = sentimentCfg.weights ?? DEFAULT_WEIGHTS;
     const messages = (body.messages as Array<{ role: string; content: string | unknown }>) ?? [];
     const userMessages = extractUserMessages(messages);
+    const assistantMessages = extractAssistantMessages(messages);
     const analysis = analyzeSentiment(userMessages, weights);
 
     const slotState = await opts.sentimentState.updateScore(slot.slotId, analysis.score, sentimentCfg);
+
+    // ── Optional AI sentiment analyzer (post-response, fire-and-forget) ──
+    // Runs only if the rule-based score crossed triggerScore + analyzer is configured.
+    // Verdict influences the NEXT request's switching decision, not this one.
+    const aiAnalyzer = opts.aiAnalyzer;
+    const shouldRunAI = aiAnalyzer.shouldInvoke(analysis.score);
+    const aiVerdictPromise = shouldRunAI
+      ? aiAnalyzer.analyze([
+          ...userMessages.map((c) => ({ role: 'user', content: c })),
+          ...assistantMessages.map((c) => ({ role: 'assistant', content: c })),
+        ].slice(-(aiAnalyzer.config?.maxTurns ?? 6)))
+      : Promise.resolve(null);
+
+    // Fire-and-forget: blend the AI verdict into the slot score once it resolves.
+    // Affects the NEXT request's switching decision (not this one).
+    aiVerdictPromise.then((verdict) => {
+      if (!verdict) return;
+      const aiScore = Math.max(verdict.frustrationScore, verdict.degradationScore);
+      const weight = aiAnalyzer.config?.weight ?? 0.6;
+      opts.sentimentState.applyAIVerdict(slot.slotId, aiScore, weight).catch(() => {});
+      if (verdict.frustrationScore > 0.5 || verdict.degradationScore > 0.5) {
+        console.log(
+          `${nowIso()}  AI-VERDICT  ${slot.slotId}  frust=${verdict.frustrationScore.toFixed(2)}  deg=${verdict.degradationScore.toFixed(2)}  ${verdict.reason}`,
+        );
+      }
+    }).catch(() => {});
 
     // ── Auto-switch check ──
     const switchResult = await applySentimentSwitch(

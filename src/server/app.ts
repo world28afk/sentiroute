@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { Config } from '../config/schema.js';
 import type { ConfigManager } from '../config/manager.js';
 import { SentimentState } from '../sentiment/state.js';
+import { createAIAnalyzer, type AIAnalyzer } from '../sentiment/ai-analyzer.js';
 import { healthRoute } from './routes/health.js';
 import { messagesRoute } from './routes/messages.js';
 import { chatRoute } from './routes/chat.js';
@@ -25,7 +26,9 @@ export async function createApp(configManager: ConfigManager, sentimentState: Se
     ? dirname(liveConfig._configPath)
     : process.cwd();
 
-  const routeOpts = { config: liveConfig, dataDir, sentimentState };
+  const aiAnalyzer: AIAnalyzer = createAIAnalyzer(liveConfig.sentiment?.aiAnalyzer);
+
+  const routeOpts = { config: liveConfig, dataDir, sentimentState, aiAnalyzer };
 
   // ── Auth middleware: protect proxy endpoints with server.api_key ──
   const exemptPrefixes = ['/health', '/dashboard/', '/api/dashboard/'];
